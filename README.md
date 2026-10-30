@@ -44,6 +44,18 @@ falsche Typen lösen `ValueError` aus.
 - Paket: Python ≥ 3.11, `opencv-python-headless` statt `opencv-python`, `gpiozero` als
   Abhängigkeit. `lgpio` und `picamera2` kommen aus Raspberry Pi OS.
 
+## Entwicklungsumgebung
+
+```bash
+mise trust          # einmalig: mise.toml freigeben
+mise install        # installiert uv
+mise run dev        # Paket editierbar + Test-Extras in .venv installieren
+```
+
+mise legt beim Betreten des Ordners `.venv` (Python 3.11 wie auf den Autos, von uv
+bereitgestellt) an und aktiviert sie automatisch – `python` und `pytest` kommen dann
+aus `.venv`. Voraussetzung: mise ist in der Shell aktiviert (`mise activate`).
+
 ## Tests
 
 ```bash
@@ -56,8 +68,7 @@ Laufen ohne Raspberry Pi (I2C-Attrappe, gpiozero `MockFactory`).
 
 ## Build & Upload (PyPI)
 
-Voraussetzungen: [mise](https://mise.jdx.dev) und [uv](https://docs.astral.sh/uv/) im
-`PATH`. Beim ersten Mal die Konfiguration freigeben: `mise trust`.
+Voraussetzung: Entwicklungsumgebung wie oben eingerichtet (uv kommt über mise).
 
 ### API-Tokens
 

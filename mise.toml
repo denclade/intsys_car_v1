@@ -1,18 +1,31 @@
 # intsys_car_v1 -- `mise tasks` listet alle Tasks, `mise run <task>` führt einen aus.
 #
-# Build und Upload laufen über uv (`uv build`, `uv publish`); uv muss im PATH
-# sein (im Fleet-Manager kommt es aus flake.nix, sonst: https://docs.astral.sh/uv/).
+# Einrichten:  mise trust && mise install && mise run dev
+# Danach ist .venv beim Betreten des Ordners automatisch aktiv (python, pytest).
+# Build und Upload laufen über uv (`uv build`, `uv publish`).
 # Die PyPI-API-Tokens stehen in .env (Vorlage: .env.template, siehe README).
+
+[tools]
+uv = "latest"
 
 [env]
 # .env ist git-ignoriert; redact = Werte erscheinen nicht in mise-Ausgaben.
 _.file = { path = ".env", redact = true }
+# Legt .venv mit uv an und aktiviert sie, sobald man im Ordner ist.
+# Python 3.11 wie auf den Autos (Raspberry Pi OS, constraints_car_v1.txt im
+# Fleet-Manager); uv lädt es bei Bedarf selbst herunter.
+_.python.venv = { path = ".venv", create = true, uv_create_args = ["--python", "3.11"] }
 
 # --- Entwicklung ---------------------------------------------------------
 
+[tasks.dev]
+description = "Installs the package editable with test extras into .venv"
+run = "uv pip install -e '.[test]'"
+
 [tasks.test]
-description = "Runs the tests (no Raspberry Pi needed)"
-run = "uv run --isolated --no-project --with-editable '.[test]' pytest"
+description = "Runs the tests in .venv (no Raspberry Pi needed)"
+depends = ["dev"]
+run = "pytest"
 
 # --- Build ---------------------------------------------------------------
 
