@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numbers
+
 from ..robot_hat import PWM
 
 def mapping(x, in_min, in_max, out_min, out_max):
@@ -71,9 +73,12 @@ class Servo(PWM):
 
         :param channel: PWM channel number(0-14/P0-P14)
         :type channel: int/str
+        :param min_angle/max_angle: allowed angles relative to the calibrated centre
+        :param compensate_angle: offset of the calibrated centre (servo horn position)
+        :param invert_angle: servo is mounted mirrored
         """
-        print(f"Initializing servo motor {name} on {channel}")
         super().__init__(channel, address, *args, **kwargs)
+        self._debug(f"Initializing servo motor {name} on {channel}")
         self.name = name
         self.min_angle = min_angle
         self.max_angle = max_angle
@@ -93,16 +98,17 @@ class Servo(PWM):
         :param angle: angle(-90~90)
         :type angle: float
         """
-        if not (isinstance(angle, int) or isinstance(angle, float)):
+        if isinstance(angle, bool) or not isinstance(angle, numbers.Real):
             raise ValueError(
                 "Angle value should be int or float value, not %s" % type(angle))
+        # Limits apply to the requested angle, i.e. symmetric around the calibrated
+        # centre; compensating first would cut one side (e.g. -10 -> left 20, right 30).
+        angle = max(self.min_angle, min(self.max_angle, float(angle)))
         angle += self.compensate_angle
         if self.invert_angle:
             angle = -angle
-        if angle < self.min_angle:
-            angle = self.min_angle
-        if angle > self.max_angle:
-            angle = self.max_angle
+        # Physical range of the servo.
+        angle = max(-90.0, min(90.0, angle))
         self._debug(f"Set angle to: {angle}")
         pulse_width_time = mapping(angle, -90, 90, self.MIN_PW, self.MAX_PW)
         self._debug(f"Pulse width: {pulse_width_time}")
@@ -127,9 +133,9 @@ class Servo(PWM):
         self.pulse_width(value)
 
 def main():
-    cam_pan_servo = Servo("P0", invert_angle=True, compensate_angle=-6)
-    cam_tilt_servo = Servo("P1", min_angle=-65, max_angle=40)
-    steering_servo = Servo("P2", min_angle=-30, max_angle=30, compensate_angle=-10)
+    cam_pan_servo = Servo("Kamera schwenken", "P0", invert_angle=True, compensate_angle=-6)
+    cam_tilt_servo = Servo("Kamera neigen", "P1", min_angle=-65, max_angle=40)
+    steering_servo = Servo("Lenkung", "P2", min_angle=-30, max_angle=30, compensate_angle=-10)
     cam_pan_servo.angle(0)
     cam_tilt_servo.angle(0)
     steering_servo.angle(0)

@@ -1,7 +1,6 @@
 import time
 
 import gpiozero
-from gpiozero.pins.lgpio import LGPIOFactory
 
 from ..robot_hat import PWM
 
@@ -24,10 +23,12 @@ class Motor:
         """
         Initialize a motor
 
-        :param pwm: Motor speed control pwm pin
-        :type pwm: PWM
-        :param dir: Motor direction control pin
-        :type dir: intsys_car_v1.robot_hat.pin.Pin
+        :param pwm_pin: Motor speed control pwm pin (e.g. 13 or "P13")
+        :param dir_pin: Motor direction control GPIO pin
+        :param factory: gpiozero pin factory, e.g. LGPIOFactory()
+        :param min_speed_to_move: PWM percentage the motor needs to start turning;
+            speeds 1..100 are mapped to min_speed_to_move..100 in both directions
+        :param is_reversed: motor is mounted the other way round
         """
 
         self.dir = gpiozero.OutputDevice(dir_pin, pin_factory=factory)
@@ -35,8 +36,6 @@ class Motor:
         self._is_reversed = is_reversed
         self._min_speed_to_move = min_speed_to_move
         self.pwm = PWM(pwm_pin)
-        self.pwm.period(4095)
-        self.pwm.prescaler(10)
         self.pwm.freq(self.freq)
         self.pwm.pulse_width_percent(0)
 
@@ -66,15 +65,27 @@ class Motor:
         value = max(min(100, value), -100)
 
         self._speed = value
-        scaled_speed = self._min_speed_to_move + (value / 100) * (100 - self._min_speed_to_move) if value != 0 else 0
-        self.pwm.pulse_width_percent(abs(scaled_speed))
+        if value == 0:
+            self.pwm.pulse_width_percent(0)
+            return
+        scaled_speed = self._min_speed_to_move + abs(value) / 100 * (100 - self._min_speed_to_move)
+        # Switch direction first, so the motor never gets the new power in the old direction.
         self.is_reversed = value < 0
+        self.pwm.pulse_width_percent(scaled_speed)
 
     def setSpeed(self, speed):
         self.speed = speed
 
+    def close(self):
+        """Stop the motor and release the direction pin."""
+        try:
+            self.pwm.pulse_width_percent(0)
+        finally:
+            self.dir.close()
+
 
 def main():
+    from gpiozero.pins.lgpio import LGPIOFactory
     factory = LGPIOFactory()
     motor_left = Motor("P13", 23, factory, min_speed_to_move=25)
     motor_left.setSpeed(0)

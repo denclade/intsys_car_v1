@@ -4,26 +4,36 @@ build-backend = "hatchling.build"
 
 [project]
 name = "intsys_car_v1"
-version = "0.0.5"
+version = "0.0.6"
 authors = [
   { name="Dr. Dennis Burgermeister", email="dennis@zumlernen.de" },
 ]
 description = "Basic control function for the intsys car v1"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
+# lgpio (gpiozero.pins.lgpio) and picamera2 come from Raspberry Pi OS
+# (python3-lgpio, python3-picamera2); use a venv with --system-site-packages.
 dependencies = [
     "smbus2",
+    "gpiozero",
     "numpy",
     "pyzmq",
-    "opencv-python",
+    "opencv-python-headless",
 ]
 license = "GPL-3.0"
 license-files = ["LICEN[CS]E*"]
 
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
 [project.urls]
 Homepage = "https://github.com/zumlernen-de/intsys_car_v1"
 Issues = "https://github.com/zumlernen-de/intsys_car_v1/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

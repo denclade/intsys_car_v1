@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 import logging
-import time
 
 
 class _Basic_class(object):
@@ -28,12 +27,13 @@ class _Basic_class(object):
         :param debug_level: debug level, 0(critical), 1(error), 2(warning), 3(info) or 4(debug)
         :type debug_level: str/int
         """
-        self.logger = logging.getLogger(f"self._class_name-{time.time()}")
-        self.ch = logging.StreamHandler()
-        form = "%(asctime)s	[%(levelname)s]	%(message)s"
-        self.formatter = logging.Formatter(form)
-        self.ch.setFormatter(self.formatter)
-        self.logger.addHandler(self.ch)
+        # One logger per class (not per object, which leaked a logger and handler each time).
+        self.logger = logging.getLogger(f"intsys_car_v1.{type(self).__name__}")
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter("%(asctime)s	[%(levelname)s]	%(message)s"))
+            self.logger.addHandler(handler)
+        self.ch = self.logger.handlers[0]
         self._debug = self.logger.debug
         self._info = self.logger.info
         self._warning = self.logger.warning

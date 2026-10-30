@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 
+import threading
+
 from smbus2 import SMBus
-import multiprocessing
 
 from .basic import _Basic_class
+
+# All devices of the Robot HAT share one MCU on the bus. Every access holds this
+# lock, and multi-step transactions (ADC: write, then read two bytes) hold it for
+# the whole transaction, so threads cannot interleave and corrupt each other.
+BUS_LOCK = threading.RLock()
+
+# Address found per (bus, candidate list), so the bus is probed only once per process.
+_detected_addresses = {}
 
 def run_command(cmd):
     """
@@ -22,16 +31,21 @@ def run_command(cmd):
     return status, result
 
 def _retry_wrapper(func):
+    """Retries transient bus errors; raises the last one instead of failing silently.
+
+    A silently failed write could mean a motor that keeps running after setSpeed(0).
+    """
 
     def wrapper(self, *arg, **kwargs):
+        error = None
         for _ in range(self.RETRY):
             try:
-                return func(self, *arg, **kwargs)
-            except OSError:
+                with BUS_LOCK:
+                    return func(self, *arg, **kwargs)
+            except OSError as exc:
                 self._debug(f"OSError: {func.__name__}")
-                continue
-        else:
-            return False
+                error = exc
+        raise error
 
     return wrapper
 
@@ -41,8 +55,6 @@ class I2C(_Basic_class):
     I2C bus read/write functions
     """
     RETRY = 5
-
-    # i2c_lock = multiprocessing.Value('i', 0)
 
     def __init__(self, address=None, bus=1, *args, **kwargs):
         """
@@ -57,13 +69,7 @@ class I2C(_Basic_class):
         self._bus = bus
         self._smbus = SMBus(self._bus)
         if isinstance(address, list):
-            connected_devices = self.scan()
-            for _addr in address:
-                if _addr in connected_devices:
-                    self.address = _addr
-                    break
-            else:
-                self.address = address[0]
+            self.address = self._detect(address)
         else:
             self.address = address
 
@@ -127,7 +133,22 @@ class I2C(_Basic_class):
         )
         return result
 
-    @_retry_wrapper
+    def _detect(self, candidates):
+        """First candidate address that answers; the first one if none does."""
+        key = (self._bus, tuple(candidates))
+        if key not in _detected_addresses:
+            found = candidates[0]
+            for address in candidates:
+                try:
+                    with BUS_LOCK:
+                        self._smbus.read_byte(address)
+                    found = address
+                    break
+                except OSError:
+                    continue
+            _detected_addresses[key] = found
+        return _detected_addresses[key]
+
     def is_ready(self):
         """Check if the I2C device is ready
 
@@ -273,9 +294,13 @@ class I2C(_Basic_class):
         """
         return self.address in self.scan()
 
+    def close(self):
+        if getattr(self, "_smbus", None) is not None:
+            self._smbus.close()
+            self._smbus = None
+
     def __del__(self):
-        self._smbus.close()
-        self._smbus = None
+        self.close()
 
 if __name__ == "__main__":
     i2c = I2C(address=[0x17, 0x15], debug_level='debug')
