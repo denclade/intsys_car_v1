@@ -56,6 +56,20 @@ class Motor:
         self._is_in_reverse = value
 
     @property
+    def min_speed_to_move(self):
+        """PWM percentage the motor needs to start turning (calibration, 0..100)."""
+        return self._min_speed_to_move
+
+    @min_speed_to_move.setter
+    def min_speed_to_move(self, value):
+        if not 0 <= value < 100:
+            raise ValueError(f"min_speed_to_move must be between 0 and 100, not {value}")
+        self._min_speed_to_move = value
+        # Apply to a running motor right away (live calibration).
+        if self._speed:
+            self.speed = self._speed
+
+    @property
     def speed(self):
         return self._speed
 

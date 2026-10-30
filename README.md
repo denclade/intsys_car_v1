@@ -23,6 +23,12 @@ linie = AnalogGrayscale(**car["line_sensor"])
 Fehlt die Datei, gilt der Standard (`CAR_CONFIG_STANDARD`). Unbekannte Schlüssel oder
 falsche Typen lösen `ValueError` aus.
 
+## Änderungen in 0.0.7
+
+- `Motor.min_speed_to_move` ist eine öffentliche Eigenschaft (0 … < 100) und wirkt bei
+  laufendem Motor sofort. Damit lässt sich live kalibrieren, wie mit
+  `Servo.compensate_angle`.
+
 ## Änderungen in 0.0.6
 
 - `Motor`: Rückwärts wird mit `min_speed_to_move` gleich skaliert wie vorwärts (vorher

@@ -73,6 +73,15 @@ def test_motor_switches_direction_before_power(factory):
     assert events == [("pwm", 0)]
 
 
+def test_motor_live_calibration_applies_immediately(factory):
+    motor, events = make_motor(factory, min_speed_to_move=25)
+    motor.setSpeed(50)
+    motor.min_speed_to_move = 40
+    assert motor.min_speed_to_move == 40 and events[-1] == ("pwm", 70.0)
+    with pytest.raises(ValueError):
+        motor.min_speed_to_move = 100
+
+
 def test_mounted_reversed_motor_flips_direction(factory):
     from intsys_car_v1 import Motor
     motor = Motor(12, 24, factory, is_reversed=True)
