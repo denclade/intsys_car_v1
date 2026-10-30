@@ -1,0 +1,65 @@
+# intsys_car_v1 -- `mise tasks` listet alle Tasks, `mise run <task>` führt einen aus.
+#
+# Build und Upload laufen über uv (`uv build`, `uv publish`); uv muss im PATH
+# sein (im Fleet-Manager kommt es aus flake.nix, sonst: https://docs.astral.sh/uv/).
+# Die PyPI-API-Tokens stehen in .env (Vorlage: .env.template, siehe README).
+
+[env]
+# .env ist git-ignoriert; redact = Werte erscheinen nicht in mise-Ausgaben.
+_.file = { path = ".env", redact = true }
+
+# --- Entwicklung ---------------------------------------------------------
+
+[tasks.test]
+description = "Runs the tests (no Raspberry Pi needed)"
+run = "uv run --isolated --no-project --with-editable '.[test]' pytest"
+
+# --- Build ---------------------------------------------------------------
+
+[tasks.clean]
+description = "Removes build artefacts (dist/, build/, *.egg-info)"
+run = "rm -rf dist build src/*.egg-info"
+
+[tasks.build]
+description = "Builds sdist and wheel into dist/"
+depends = ["clean"]
+run = [
+    "uv build",
+    "uvx twine check --strict dist/*",
+]
+
+# --- Upload --------------------------------------------------------------
+# --check-url: Dateien, die dort schon identisch liegen, werden übersprungen
+# statt mit Fehler abzubrechen. Eine Version lässt sich auf (Test-)PyPI nur
+# einmal hochladen -- vorher `version` in pyproject.toml erhöhen.
+
+[tasks."publish:test"]
+description = "Builds and uploads to TestPyPI (token: TESTPYPI_TOKEN in .env)"
+depends = ["build"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -z "${TESTPYPI_TOKEN:-}" ]; then
+    echo "TESTPYPI_TOKEN fehlt -- in .env eintragen (Vorlage: .env.template)." >&2
+    exit 1
+fi
+UV_PUBLISH_TOKEN="$TESTPYPI_TOKEN" uv publish \
+    --publish-url https://test.pypi.org/legacy/ \
+    --check-url https://test.pypi.org/simple/
+echo "Test-Installation:"
+echo "  pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ intsys_car_v1"
+'''
+
+[tasks.publish]
+description = "Builds and uploads to PyPI (token: PYPI_TOKEN in .env)"
+depends = ["build"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -z "${PYPI_TOKEN:-}" ]; then
+    echo "PYPI_TOKEN fehlt -- in .env eintragen (Vorlage: .env.template)." >&2
+    exit 1
+fi
+UV_PUBLISH_TOKEN="$PYPI_TOKEN" uv publish \
+    --check-url https://pypi.org/simple/
+'''

@@ -47,15 +47,54 @@ falsche Typen lösen `ValueError` aus.
 ## Tests
 
 ```bash
+mise run test
+# ohne mise:
 pip install -e '.[test]' && python -m pytest
 ```
 
 Laufen ohne Raspberry Pi (I2C-Attrappe, gpiozero `MockFactory`).
 
-## Build & upload package
+## Build & Upload (PyPI)
+
+Voraussetzungen: [mise](https://mise.jdx.dev) und [uv](https://docs.astral.sh/uv/) im
+`PATH`. Beim ersten Mal die Konfiguration freigeben: `mise trust`.
+
+### API-Tokens
+
+Die Tokens gehören **ausschließlich** in die Datei `.env` im Wurzelverzeichnis dieses
+Repos. Sie ist git-ignoriert; eingecheckt wird nur die Vorlage `.env.template`.
 
 ```bash
-python -m build
-python3 -m twine upload --repository testpypi dist/* --verbose
-python3 -m twine upload dist/*
+cp .env.template .env
 ```
+
+Dann in `.env` eintragen:
+
+| Variable         | Für                     | Token erstellen                                   |
+| ---------------- | ----------------------- | ------------------------------------------------- |
+| `PYPI_TOKEN`     | `mise run publish`      | https://pypi.org/manage/account/token/            |
+| `TESTPYPI_TOKEN` | `mise run publish:test` | https://test.pypi.org/manage/account/token/       |
+
+Tokens beginnen mit `pypi-…`. TestPyPI ist ein eigener Dienst mit eigenem Account und
+eigenem Token. Am besten das Token auf das Projekt `intsys_car_v1` beschränken.
+mise lädt `.env` automatisch und blendet die Werte in seinen Ausgaben aus.
+
+### Ablauf
+
+1. `version` in `pyproject.toml` erhöhen (eine Version lässt sich nur einmal hochladen).
+2. Bauen und prüfen:
+   ```bash
+   mise run build          # dist/*.whl + dist/*.tar.gz, danach twine check
+   ```
+3. Erst auf TestPyPI, dann ausprobieren:
+   ```bash
+   mise run publish:test
+   pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ intsys_car_v1
+   ```
+4. Auf PyPI:
+   ```bash
+   mise run publish
+   ```
+
+`publish` und `publish:test` bauen vorher immer frisch (`clean` → `build`). Alle Tasks:
+`mise tasks`.
