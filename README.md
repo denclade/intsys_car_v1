@@ -38,6 +38,8 @@ den Klassen.
 | `frame_count`, `image` | Durchläufe/Bilder, Kamerabild (numpy, BGR) |
 
 Werte außerhalb des Bereichs werden begrenzt, Nicht-Zahlen lösen `ValueError` aus.
+`car.stop()` setzt alles auf 0, `car.calibrate("servo_steering", "compensate_angle", -8)`
+kalibriert live (Fahrzeug: sofort bis Programmende; Server: mit der nächsten Antwort).
 
 **Fahrzeug** (Hardware aus `car.toml`; `car.motor_left`, `car.servo_steering` usw. bleiben
 erreichbar, aber nicht zusätzlich eigene `Motor`-Objekte für dieselben Pins anlegen):

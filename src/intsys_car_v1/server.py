@@ -130,6 +130,10 @@ class CarServer(ImageMixin):
             print(f"Kalibrierung abgelehnt: {self.message['calibration_error']}")
         return True
 
+    def stop(self):
+        """Anhalten, Lenkung und Kamera geradeaus (alle Steuerwerte 0)."""
+        self._values = {key: 0.0 for key in ("speed", "steering", "pan", "tilt")}
+
     def calibrate(self, section, key, value):
         """Live-Kalibrierung für die laufende Ausleihe, z. B. ("servo_steering", "compensate_angle", -8).
 

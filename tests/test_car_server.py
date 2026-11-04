@@ -317,3 +317,22 @@ def test_xbox_controller_hotplug_and_mapping():
     assert parse_reply({"controller": data})["steering"] == -30
     pygame.axes = None
     assert xbox.read() == neutral() and not xbox.connected
+
+
+def test_car_calibrate_directly_and_stop(car):
+    car.steering = 10
+    car.calibrate("servo_steering", "compensate_angle", -8)
+    assert car.servo_steering.compensate_angle == -8
+    assert car.angles["steering"][-1] == 10.0  # servo moves to the new centre
+    with pytest.raises(ValueError):
+        car.calibrate("servo_steering", "compensate_angle", 99)
+    car.speed = 40
+    car.stop()
+    assert (car.speed, car.left, car.steering, car.pan) == (0.0, 0.0, 0.0, 0.0)
+
+
+def test_server_stop(server):
+    car, _ = server
+    car.left, car.steering = 30, 20
+    car.stop()
+    assert (car.speed, car.left, car.right, car.steering) == (0.0, 0.0, 0.0, 0.0)

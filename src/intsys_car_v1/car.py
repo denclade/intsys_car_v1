@@ -269,13 +269,23 @@ class Car(ImageMixin):
             current.setdefault(section, {})[key] = getattr(device, key)
         return current
 
+    def calibrate(self, section, key, value):
+        """Live-Kalibrierung bis Programmende, z. B. ("servo_steering", "compensate_angle", -8).
+
+        Dauerhaft nur über car.toml (Ansible). Ungültige Werte lösen ValueError aus.
+        """
+        self._set_calibration(check_calibration({section: {key: value}}))
+
     def _apply_calibration(self, changes):
-        """Alle Werte oder keiner; ein Fehler wird einmal an den Server gemeldet."""
+        """Vom Server: alle Werte oder keiner; ein Fehler wird einmal an den Server gemeldet."""
         try:
             checked = check_calibration(changes)
         except ValueError as error:
             self._calibration_error = str(error)
             return
+        self._set_calibration(checked)
+
+    def _set_calibration(self, checked):
         devices = self._calibration_devices()
         for section, key, value in checked:
             setattr(devices[(section, key)], key, value)  # Motoren übernehmen das sofort
