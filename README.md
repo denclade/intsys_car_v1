@@ -23,6 +23,69 @@ linie = AnalogGrayscale(**car["line_sensor"])
 Fehlt die Datei, gilt der Standard (`CAR_CONFIG_STANDARD`). Unbekannte Schlüssel oder
 falsche Typen lösen `ValueError` aus.
 
+## Fahrzeug und Schüler-Server: `Car` und `CarServer`
+
+Beide Seiten werden gleich bedient: Steuerwerte sind Eigenschaften, die Fahrschleife ist
+`while car.next_frame():`. Port (5555), Takt, Sicherheitsstopp und Protokoll stecken in
+den Klassen.
+
+| Eigenschaft | Bedeutung |
+|---|---|
+| `speed`, `left`, `right` | Motoren −100 … 100 (`speed` setzt beide) |
+| `steering`, `pan`, `tilt` | Lenkung −30 … 30°, Kamera schwenken −90 … 90°, neigen −65 … 40° |
+| `distance` | Ultraschall in cm, 999 ohne Echo |
+| `line_left`, `line_center`, `line_right` | Linie erkannt (`*_value`: Rohwert) |
+| `frame_count`, `image` | Durchläufe/Bilder, Kamerabild (numpy, BGR) |
+
+Werte außerhalb des Bereichs werden begrenzt, Nicht-Zahlen lösen `ValueError` aus.
+
+**Fahrzeug** (Hardware aus `car.toml`; `car.motor_left`, `car.servo_steering` usw. bleiben
+erreichbar, aber nicht zusätzlich eigene `Motor`-Objekte für dieselben Pins anlegen):
+
+```python
+from intsys_car_v1 import Car
+
+car = Car()
+car.connect("192.168.0.10")   # optional: Schüler-Server
+while car.next_frame():       # max. 20/s; mit Server: Bild + Sensordaten senden, Antwort fahren
+    if car.distance < 15:
+        car.speed = 0         # eigene Regeln nach der Server-Antwort
+```
+
+Ohne Antwort hält das Fahrzeug nach 2 s an. Programmende (auch Strg+C) stoppt die Motoren
+und stellt die Servos auf 0°.
+
+**Schüler-Server** (`pip install "intsys_car_v1[server]"` für pygame):
+
+```python
+from intsys_car_v1 import CarServer
+
+car = CarServer()             # Port 5555, Kamerafenster
+while car.next_frame():       # wartet auf das nächste Bild; q oder Fenster schließen beendet
+    car.drive_manually()      # WASD im Fenster oder Xbox-Controller
+    if car.distance < 20 and car.speed > 0:
+        car.speed = 0
+```
+
+- Gesetzte Werte bleiben stehen und gehen mit jeder Antwort mit; nie gesetzte Werte werden
+  nicht gesendet (das Fahrzeug nimmt 0).
+- `drive_manually()`: W/S vor/zurück mit 100, A/D lenken 30°, loslassen = 0, wie im
+  Dashboard von intsys-car-v1-server. Gedrückte Tasten haben Vorrang vor dem Controller.
+- `key_pressed("space")`, `controller` (Rohdaten), `message` (Sensordaten des Fahrzeugs).
+- `calibrate("servo_steering", "compensate_angle", -8)`: Live-Kalibrierung, einmal gesendet.
+
+Auf beiden Seiten wertet `car.brightness("left")` (0 … 255; `"center"`, `"right"`, `"all"`)
+und `car.color_share("red")` (% der Pixel; `"orange"`, `"yellow"`, `"green"`, `"blue"`) das
+Kamerabild aus; `car.save_image("bilder")` speichert es als `bild_<Nummer>.jpg`.
+
+`intsys_car_v1.protocol` enthält die Regeln ohne Hardware (`parse_reply`,
+`check_calibration`, Grenzen); `Car` und SPARK-E werten Antworten gleich aus.
+
+## Änderungen in 0.0.8
+
+- Neu: `Car`, `CarServer`, `intsys_car_v1.protocol` und `intsys_car_v1.vision` (siehe oben). Extra `[server]`
+  installiert pygame für Fenster, Tastatur und Controller.
+
 ## Änderungen in 0.0.7
 
 - `Motor.min_speed_to_move` ist eine öffentliche Eigenschaft (0 … < 100) und wirkt bei

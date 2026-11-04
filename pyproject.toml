@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "intsys_car_v1"
-version = "0.0.7"
+version = "0.0.8"
 authors = [
   { name="Dr. Dennis Burgermeister", email="dennis@zumlernen.de" },
 ]
@@ -29,6 +29,8 @@ license-files = ["LICEN[CS]E*"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
+# Schülerrechner: Kamerafenster, Tastatur und Xbox-Controller für CarServer
+server = ["pygame"]
 
 [project.urls]
 Homepage = "https://github.com/zumlernen-de/intsys_car_v1"
