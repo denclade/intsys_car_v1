@@ -83,10 +83,23 @@ class Servo(PWM):
         self.min_angle = min_angle
         self.max_angle = max_angle
         self.invert_angle = invert_angle
-        self.period(self.PERIOD)
         self.compensate_angle = compensate_angle
-        prescaler = self.CLOCK / self.FREQ / self.PERIOD
-        self.prescaler(prescaler)
+
+    def freq(self, freq=None):
+        """Timer setup for servos (called by PWM.__init__ with 50 Hz).
+
+        Steering, pan and tilt share timer 0, and the pulse length is
+        pulse register * prescaler / CLOCK, independent of the period. PWM.freq
+        would first set prescaler 1200, stretching the pulses of the servos already
+        running on the timer about 3.4 times (centre 1.5 ms -> 5.1 ms) until the
+        servo prescaler is written: they jerked wildly on every start. Writing the
+        servo prescaler first keeps every pulse valid.
+        """
+        if freq is None:
+            return super().freq()
+        self._freq = int(freq)
+        self.prescaler(self.CLOCK / self._freq / self.PERIOD)
+        self.period(self.PERIOD)
 
     def angle(self, angle):
         self.setAngle(angle)

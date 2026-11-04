@@ -116,6 +116,40 @@ def test_servo_inverted_and_physical_limit():
         servo.setAngle("10")
 
 
+def test_servo_init_keeps_pulses_of_running_servos_valid(monkeypatch):
+    """Simulates timer 0 of the Robot HAT MCU while three servos are created.
+
+    The pulse registers still hold the angles of the previous run; no write may
+    turn them into pulses outside 500..2500 us (the servos jerk wildly then).
+    """
+    from intsys_car_v1 import Servo
+    from intsys_car_v1.robot_hat import pwm
+
+    clock = Servo.CLOCK
+    timer = {"psc": 352, "arr": 4095}
+    previous = {0: 102, 1: 307, 2: 511}  # pulse registers: -90, 0, 90 degrees
+    pulses = dict(previous)
+    worst = []
+
+    class McuBus(FakeBus):
+        def write_word_data(self, address, register, value):
+            value = ((value & 0xFF) << 8) | (value >> 8)  # PWM sends high byte first
+            if register == pwm.PWM.REG_PSC:
+                timer["psc"] = value + 1
+            elif register == pwm.PWM.REG_ARR:
+                timer["arr"] = value
+            elif pwm.PWM.REG_CHN <= register < pwm.PWM.REG_CHN + 4:
+                pulses[register - pwm.PWM.REG_CHN] = value
+            worst.extend(pulse * timer["psc"] / clock * 1e6 for pulse in pulses.values())
+
+    monkeypatch.setattr(i2c, "SMBus", McuBus)
+    for name, channel in (("Lenkung", 2), ("Kamera schwenken", 0), ("Kamera neigen", 1)):
+        servo = Servo(name, channel)
+    assert worst and all(495 <= us <= 2505 for us in worst)  # register rounding
+    assert pulses == previous  # creating a servo does not move it
+    assert servo.prescaler() == 352 and servo.period() == 4095
+
+
 def test_bus_errors_are_raised_not_swallowed():
     from intsys_car_v1.robot_hat import PWM
     pwm = PWM(13)
