@@ -80,6 +80,10 @@ while car.next_frame():       # wartet auf das nächste Bild; q oder Fenster sch
   Aktoren gesendet vs. vom Fahrzeug gemeldet (Abweichung gelb), Kalibrierung und
   `sensor_errors`. Abschalten mit `CarServer(show_info=False)`. Schriften: Inter und
   JetBrains Mono (SIL OFL 1.1, liegen mit Lizenz in `fonts/`).
+- Das Kamerafenster ist in der Größe veränderbar: Die Spalte bleibt rechts mit fester Breite,
+  das Bild füllt den Rest seitenrichtig (schwarze Balken). `Strg +` / `Strg −` ändern die
+  Schriftgröße der Spalte (80 … 200 %), `Strg 0` setzt sie zurück. Ist das Bild größer als der
+  Bildschirm, öffnet sich das Fenster passend verkleinert.
 
 Auf beiden Seiten wertet `car.brightness("left")` (0 … 255; `"center"`, `"right"`, `"all"`)
 und `car.color_share("red")` (% der Pixel; `"orange"`, `"yellow"`, `"green"`, `"blue"`) das

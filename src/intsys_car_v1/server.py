@@ -36,7 +36,7 @@ from .protocol import (
 )
 from .vision import ImageMixin
 
-TITLE = "intsys car (WASD fahren, q beenden)"
+TITLE = "intsys car (WASD fahren, Strg +/− Schrift, q beenden)"
 _POLL_MS = 50  # Fenster bleibt bedienbar, während auf das Fahrzeug gewartet wird
 
 # Tastatur wie im Dashboard von intsys-car-v1-server: halten = fahren, loslassen = 0.
@@ -103,8 +103,10 @@ class CarServer(ImageMixin):
         self._compute_time = None  # Zeit vom Bild bis zur Antwort (Schülerprogramm)
         self._last_calibration_error = None  # (Text, Zeitpunkt), wird nur einmal gemeldet
         self._window = None
-        self._window_size = None
-        self._panel_height = None
+        self._image_size = None     # Bildgröße, für die das Fenster geöffnet wurde
+        self._panel_scale = 1.0     # Schriftgröße der Info-Spalte (Strg +/−)
+        self._panel_heights = {}    # benötigte Höhe der Spalte je Schriftgröße
+        self._camera_cache = None   # skaliertes Bild, solange sich Bild und Größe nicht ändern
         self._xbox = None
         self._pygame = None
         self._pygame_failed = False
@@ -178,6 +180,7 @@ class CarServer(ImageMixin):
         self._socket.close(linger=0)
         self._context.term()
         if self._pygame is not None:
+            panel.clear_fonts()
             self._pygame.quit()
 
     def __enter__(self):
@@ -268,7 +271,12 @@ class CarServer(ImageMixin):
             self._compute_time = time.monotonic() - self._received_at
 
     def _show(self):
-        """Kamerabild im pygame-Fenster zeigen; False, wenn beendet werden soll."""
+        """Kamerabild und Info-Spalte im pygame-Fenster zeigen; False, wenn beendet werden soll.
+
+        Das Fenster ist in der Größe veränderbar: Die Spalte bleibt rechts mit fester Breite,
+        das Bild füllt den Rest seitenrichtig (schwarze Balken). Strg +/−/0 ändert die
+        Schriftgröße der Spalte.
+        """
         if not self._show_image:
             return True
         pygame = self._get_pygame()
@@ -276,34 +284,93 @@ class CarServer(ImageMixin):
             self._show_image = False
             return True
         for event in pygame.event.get():
-            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_q):
+            if event.type == pygame.QUIT:
                 return False
-        if self.image is None:
-            size = (640, 480)
-            surface = pygame.Surface(size)
-            text = pygame.font.Font(None, 36).render("Warte auf Fahrzeug ...", True, (255, 255, 255))
-            surface.blit(text, (20, 220))
-        else:
-            rgb = np.ascontiguousarray(self.image[:, :, 2::-1])  # OpenCV liefert BGR
-            size = (rgb.shape[1], rgb.shape[0])
-            surface = pygame.image.frombuffer(rgb.tobytes(), size, "RGB")
-        info = None
-        window_size = size
+            if event.type == pygame.KEYDOWN:
+                if event.mod & (pygame.KMOD_CTRL | pygame.KMOD_GUI) and self._zoom(pygame, event.key):
+                    continue
+                if event.key == pygame.K_q:
+                    return False
+        image_size = (640, 480) if self.image is None else (self.image.shape[1], self.image.shape[0])
+        if self._window is None or image_size != self._image_size:
+            self._image_size = image_size  # neue Auflösung: Fenster passend zum Bild
+            self._open_window(pygame, self._natural_size(pygame))
+        window = pygame.display.get_surface()
+        width, height = window.get_size()
+        panel_width = panel.width(self._panel_scale) if self._show_info else 0
+        window.fill((0, 0, 0))
+        self._blit_camera(pygame, window, (width - panel_width, height))
         if self._show_info:
-            if self._panel_height is None:
-                self._panel_height = panel.needed_height(pygame)
-            window_size = (size[0] + panel.WIDTH, max(size[1], self._panel_height))
-            info, _ = panel.draw(pygame, self._info(), window_size[1])
-        if self._window is None or self._window_size != window_size:
-            self._window = pygame.display.set_mode(window_size)
-            self._window_size = window_size
-            pygame.display.set_caption(TITLE)
-        self._window.fill((0, 0, 0))
-        self._window.blit(surface, (0, 0))
-        if info is not None:
-            self._window.blit(info, (size[0], 0))
+            info, _ = panel.draw(pygame, self._info(), height, self._panel_scale)
+            window.blit(info, (width - panel_width, 0))
         pygame.display.flip()
         return True
+
+    def _zoom(self, pygame, key):
+        """Strg + / − / 0: Schriftgröße der Info-Spalte. True, wenn die Taste dazu gehört."""
+        if key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
+            scale = self._panel_scale + panel.SCALE_STEP
+        elif key in (pygame.K_MINUS, pygame.K_KP_MINUS):
+            scale = self._panel_scale - panel.SCALE_STEP
+        elif key in (pygame.K_0, pygame.K_KP0):
+            scale = 1.0
+        else:
+            return False
+        self._panel_scale = panel.clamp_scale(scale)
+        if self._show_info and self._window is not None:
+            width, height = pygame.display.get_surface().get_size()
+            needed = self._panel_needed(pygame)
+            if height < needed:  # Spalte soll nie abgeschnitten werden
+                self._open_window(pygame, (width, needed))
+        return True
+
+    def _panel_needed(self, pygame):
+        scale = self._panel_scale
+        if scale not in self._panel_heights:
+            self._panel_heights[scale] = panel.needed_height(pygame, scale)
+        return self._panel_heights[scale]
+
+    def _natural_size(self, pygame):
+        """Bild in Originalgröße plus Spalte, höchstens so groß wie der Bildschirm."""
+        image_width, image_height = self._image_size
+        panel_width = panel.width(self._panel_scale) if self._show_info else 0
+        panel_height = self._panel_needed(pygame) if self._show_info else 0
+        factor = 1.0
+        try:
+            desktop_width, desktop_height = pygame.display.get_desktop_sizes()[0]
+            if desktop_width > 0 and desktop_height > 0:
+                factor = min(1.0, (0.95 * desktop_width - panel_width) / image_width,
+                             0.9 * desktop_height / image_height)
+        except (AttributeError, IndexError, pygame.error):
+            pass
+        factor = max(factor, 0.25)
+        return (round(image_width * factor) + panel_width,
+                max(round(image_height * factor), panel_height))
+
+    def _open_window(self, pygame, size):
+        self._window = pygame.display.set_mode(size, pygame.RESIZABLE)
+        pygame.display.set_caption(TITLE)
+
+    def _blit_camera(self, pygame, window, area):
+        """Bild seitenrichtig in die Fläche links skalieren (Rest bleibt schwarz)."""
+        area_width, area_height = area
+        if area_width <= 0 or area_height <= 0:
+            return
+        if self.image is None:
+            text = panel.font(pygame, panel.SANS, 22).render("Warte auf Fahrzeug …", True, panel.SECONDARY)
+            window.blit(text, ((area_width - text.get_width()) // 2, (area_height - text.get_height()) // 2))
+            return
+        height, width = self.image.shape[:2]
+        factor = min(area_width / width, area_height / height)
+        size = (max(1, round(width * factor)), max(1, round(height * factor)))
+        key = (id(self.image), self.frame_count, size)
+        if self._camera_cache is None or self._camera_cache[0] != key:
+            rgb = np.ascontiguousarray(self.image[:, :, 2::-1])  # OpenCV liefert BGR
+            surface = pygame.image.frombuffer(rgb.tobytes(), (width, height), "RGB")
+            if size != (width, height):
+                surface = pygame.transform.smoothscale(surface, size)
+            self._camera_cache = (key, surface)
+        window.blit(self._camera_cache[1], ((area_width - size[0]) // 2, (area_height - size[1]) // 2))
 
     def _info(self):
         """Daten für die Info-Spalte (panel.draw)."""

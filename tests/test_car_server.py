@@ -557,7 +557,8 @@ def test_info_panel_draws_vehicle_data(monkeypatch):
     car = CarServer(port=free_port())
     try:
         assert car._show()  # wartet: Spalte ohne Daten
-        assert car._window_size == (640 + panel.WIDTH, max(480, car._panel_height))
+        needed = car._panel_needed(pygame)
+        assert car._window.get_size() == (640 + panel.WIDTH, max(480, needed))
         car.image = IMAGE
         car.message = {"ultraschall": 12.5, "linien": {"centerDetected": True, "centerValue": 210},
                        "actor_data": {"speed": 40, "steering_angle": -15},
@@ -566,9 +567,48 @@ def test_info_panel_draws_vehicle_data(monkeypatch):
         car.speed, car.left = 40, 60
         info = car._info()
         assert info["target"]["steering"] == 0 and info["motors"] == (60, 40)
-        assert car._show()
-        assert car._window_size == (64 + panel.WIDTH, car._panel_height)
-        _, height = panel.draw(pygame, info, car._panel_height)
-        assert height == car._panel_height  # Fenster springt nicht
+        assert car._show()  # neue Bildgröße: Fenster passt sich an
+        assert car._window.get_size() == (64 + panel.WIDTH, needed)
+        _, height = panel.draw(pygame, info, needed)
+        assert height == needed  # Fenster springt nicht
+    finally:
+        car.close()
+
+
+def test_window_scales_image_and_panel_font(monkeypatch):
+    pygame = pytest.importorskip("pygame")
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    from intsys_car_v1 import panel
+
+    car = CarServer(port=free_port())
+    try:
+        car.image = np.full((48, 64, 3), 255, np.uint8)
+        car._show()
+        # größeres Fenster: Bild wird hochskaliert, Spalte bleibt gleich breit
+        pygame.display.set_mode((1000, 600), pygame.RESIZABLE)
+        car._show()
+        window = pygame.display.get_surface()
+        assert car._camera_cache[1].get_size() == (700, 525)
+        assert window.get_at((350, 300))[:3] == (255, 255, 255)  # Bild, mittig
+        assert window.get_at((350, 10))[:3] == (0, 0, 0)         # schwarzer Balken
+        assert window.get_at((1000 - panel.WIDTH + 2, 3))[:3] == panel.BASE
+
+        def key(code):
+            pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=code, mod=pygame.KMOD_CTRL))
+            car._show()
+
+        key(pygame.K_PLUS)
+        assert car._panel_scale == 1.1
+        assert window.get_at((1000 - panel.width(1.1) + 2, 3))[:3] == panel.BASE
+        for _ in range(20):
+            key(pygame.K_PLUS)
+        assert car._panel_scale == panel.SCALE_MAX
+        assert pygame.display.get_surface().get_size()[1] >= car._panel_needed(pygame)
+        key(pygame.K_0)
+        assert car._panel_scale == 1.0
+        key(pygame.K_MINUS)
+        assert car._panel_scale == 0.9
+        pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_q, mod=0))
+        assert not car._show()
     finally:
         car.close()
