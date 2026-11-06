@@ -197,8 +197,11 @@ def test_car_config(tmp_path):
     assert config["servo_steering"]["compensate_angle"] == -7.5
     assert config["servo_steering"]["channel"] == 2
     assert CAR_CONFIG_STANDARD["line_sensor"]["channel_left"] == 23
+    path.write_text("[camera]\nnoir = true\n")
+    assert load_car_config(path)["camera"] == {"hflip": False, "vflip": False, "noir": True}
     for content in ("[servo_lenkung]\nchannel = 2\n", "[motor_left]\npwm_pin = 13.5\n",
-                    "[motor_left]\nis_reversed = 1\n", "[servo_steering]\ncompensate = 1\n"):
+                    "[motor_left]\nis_reversed = 1\n", "[servo_steering]\ncompensate = 1\n",
+                    "[camera]\nnoir = 1\n"):
         path.write_text(content)
         with pytest.raises(ValueError):
             load_car_config(path)

@@ -202,3 +202,9 @@ Zeitlimit 3 s). Ein ohne Abmeldung verschwundenes Fahrzeug blockiert den
 Liegen beim Fahrzeug mehrere Antworten bereit, nimmt `Car` die neueste.
 `Car(jpeg_quality=90)` legt die JPEG-Qualität der gesendeten Bilder fest
 (kleiner = weniger WLAN-Last).
+
+Kamera ohne IR-Filter (NoIR-Modul, ab 0.0.11): in `car.toml` `[camera] noir = true`.
+`Car` lädt dann die Tuning-Datei `<sensor>_noir.json` (z. B. `ov5647_noir.json`), sonst
+hat das Bild einen grün/magenta Farbstich. Der Sensor kann den fehlenden Filter nicht
+selbst melden. Für eigene Picamera2-Skripte: `Picamera2(tuning=camera_tuning(Picamera2,
+config["camera"]["noir"]))` mit `from intsys_car_v1.car import camera_tuning`.

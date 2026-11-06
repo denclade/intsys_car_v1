@@ -77,6 +77,25 @@ def _exposure_time(metadata):
     return time.monotonic() - age if 0 <= age < 5 else None
 
 
+def camera_tuning(picamera2, noir):
+    """Tuning für Picamera2(tuning=…): bei NoIR-Modulen <sensor>_noir.json, sonst None (Standard).
+
+    Der Sensor (z. B. ov5647, imx219) wird ausgelesen; den fehlenden IR-Filter kann er nicht
+    melden, deshalb steht das in car.toml (camera.noir).
+    """
+    if not noir:
+        return None
+    cameras = picamera2.global_camera_info()
+    if not cameras:
+        return None  # Picamera2() meldet dann selbst, dass keine Kamera da ist
+    model = cameras[0]["Model"]
+    try:
+        return picamera2.load_tuning_file(f"{model}_noir.json")
+    except RuntimeError:
+        print(f"Keine NoIR-Tuning-Datei für Sensor {model}, nutze das Standard-Tuning")
+        return None
+
+
 def _timing(image_time, ultrasonic_time):
     """Zeitfelder fürs Protokoll (wie SPARK-E): Sendezeit (Unix) und Alter der Daten in s."""
     now = time.monotonic()
@@ -227,7 +246,7 @@ class Car(ImageMixin):
             from libcamera import Transform
             from picamera2 import Picamera2
             flip = self.config["camera"]
-            camera = Picamera2()
+            camera = Picamera2(tuning=camera_tuning(Picamera2, flip.get("noir", False)))
             camera.configure(camera.create_video_configuration(
                 main={"format": "XRGB8888", "size": (640, 480)},
                 controls={"FrameRate": 30},  # passend zu FRAME_INTERVAL

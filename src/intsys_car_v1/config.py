@@ -30,7 +30,9 @@ STANDARD = {
     "ultrasonic": dict(trigger_pin=27, echo_pin=22, temperature_c=20),
     "line_sensor": dict(threshold=300, channel_left=23, channel_center=22, channel_right=21),
     # Für Picamera2: libcamera.Transform(hflip=…, vflip=…), z. B. bei kopfüber montierter Kamera.
-    "camera": dict(hflip=False, vflip=False),
+    # noir: Kameramodul ohne IR-Filter (NoIR); dann gilt die Tuning-Datei <sensor>_noir.json,
+    # sonst bekommt das Bild einen grün/magenta Farbstich. Der Sensor meldet das nicht selbst.
+    "camera": dict(hflip=False, vflip=False, noir=False),
 }
 
 # Kalibrierwerte dürfen Kommazahlen sein; Pins, Kanäle und Schwellen sind ganze Zahlen.

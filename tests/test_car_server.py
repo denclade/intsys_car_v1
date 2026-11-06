@@ -493,3 +493,28 @@ def test_server_heartbeat_frees_port_from_vanished_car(monkeypatch):
         new.close(linger=0)
         ctx.term()
         server.close()
+
+
+def test_camera_tuning_for_noir_modules():
+    from intsys_car_v1.car import camera_tuning
+
+    class FakePicamera2:
+        cameras = [{"Model": "ov5647"}]
+        files = {"ov5647_noir.json": {"algorithms": "noir"}}
+
+        @classmethod
+        def global_camera_info(cls):
+            return cls.cameras
+
+        @classmethod
+        def load_tuning_file(cls, name):
+            if name not in cls.files:
+                raise RuntimeError("Tuning file not found")
+            return cls.files[name]
+
+    assert camera_tuning(FakePicamera2, False) is None  # normales Modul: Standard
+    assert camera_tuning(FakePicamera2, True) == {"algorithms": "noir"}
+    FakePicamera2.cameras = [{"Model": "unknown"}]
+    assert camera_tuning(FakePicamera2, True) is None  # keine NoIR-Datei: Standard statt Absturz
+    FakePicamera2.cameras = []
+    assert camera_tuning(FakePicamera2, True) is None
