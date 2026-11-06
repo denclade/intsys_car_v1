@@ -62,6 +62,27 @@ def _line_value(key):
     return property(lambda self: self._measure()["linien"].get(key), doc=f"Liniensensor-Rohwert {key}")
 
 
+def _exposure_time(metadata):
+    """libcamera SensorTimestamp (CLOCK_BOOTTIME in ns, Belichtungsbeginn) als time.monotonic().
+
+    None, wenn er fehlt oder unplausibel ist: lieber unbekannt als falsch.
+    """
+    stamp = (metadata or {}).get("SensorTimestamp")
+    if not isinstance(stamp, int):
+        return None
+    age = (time.clock_gettime_ns(time.CLOCK_BOOTTIME) - stamp) / 1e9
+    return time.monotonic() - age if 0 <= age < 5 else None
+
+
+def _timing(image_time, ultrasonic_time):
+    """Zeitfelder fürs Protokoll (wie SPARK-E): Sendezeit (Unix) und Alter der Daten in s."""
+    now = time.monotonic()
+
+    def age(stamp):
+        return None if stamp is None else round(max(0.0, now - stamp), 4)
+    return {"sent": time.time(), "image_age": age(image_time), "ultrasonic_age": age(ultrasonic_time)}
+
+
 class Car(ImageMixin):
     """PiCar-X mit Robot HAT nach dem intsys-car-v1-Standard."""
 
@@ -107,6 +128,7 @@ class Car(ImageMixin):
         self._sensors_time = None
         self._camera = None
         self._image = None
+        self._image_time = None  # time.monotonic() des Belichtungsbeginns
         self._context = None
         self._socket = None
         self._server_lost = False
@@ -151,6 +173,7 @@ class Car(ImageMixin):
     def image(self):
         """Kamerabild (numpy, BGR); startet die Kamera beim ersten Zugriff."""
         if self._image is None:
+            self._image_time = None
             self._image = self._capture()
         return self._image
 
@@ -208,8 +231,14 @@ class Car(ImageMixin):
             camera.start()
             time.sleep(2)  # Sensor aufwärmen lassen
             self._camera = camera
-        # XRGB8888 liegt als B, G, R, X vor; die ersten drei Kanäle sind OpenCVs BGR.
-        return self._camera.capture_array()[:, :, :3]
+        request = self._camera.capture_request()
+        try:
+            # XRGB8888 liegt als B, G, R, X vor; die ersten drei Kanäle sind OpenCVs BGR.
+            image = request.make_array("main")[:, :, :3]
+            self._image_time = _exposure_time(request.get_metadata())
+        finally:
+            request.release()
+        return image
 
     # --- Server -------------------------------------------------------------
 
@@ -254,6 +283,7 @@ class Car(ImageMixin):
     def sensor_data(self):
         """Sensordaten für den Server, wie im Standard."""
         sensors = self._measure()
+        sample = self._distance_sample
         data = {
             "ultraschall": sensors["ultraschall"],
             "linien": dict(sensors["linien"]),
@@ -262,6 +292,7 @@ class Car(ImageMixin):
             "sensor_errors": dict(self.sensor_errors),
             "calibration": self._current_calibration(),
             "calibration_session": self._calibration_session,
+            "timing": _timing(self._image_time, sample[2] if sample else None),
         }
         if self._calibration_error:
             data["calibration_error"] = self._calibration_error

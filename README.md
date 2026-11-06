@@ -190,3 +190,8 @@ wird der letzte abgeschlossene Messwert. `Car()` wartet beim Start kurz auf die
 erste Messung. Ist ein Messwert älter als 0,5 s (oder fehlt er), gilt der Abstand
 als unbekannt: `None` im Protokoll, `999` über `car.distance`, Grund in
 `car.sensor_errors["ultrasonic"]`.
+
+Jedes Bild trägt ab 0.0.10 `timing` für Latenzanzeigen (wie der SPARK-E-Agent):
+`sent` (Sendezeit, Unix-Sekunden), `image_age` (Belichtungsbeginn bis Senden) und
+`ultrasonic_age` (Ende der Messung bis Senden), beide in Sekunden auf dem Fahrzeug
+gemessen; unbekannt ist `None`.

@@ -404,3 +404,18 @@ def test_car_frame_rate_keeps_a_fixed_grid(car):
     for _ in range(31):
         car.next_frame()
     assert 0.95 < time.monotonic() - started < 1.15  # 30 Abstände zu 1/30 s
+
+
+def test_car_sends_timing(car):
+    data = car.sensor_data()
+    timing = data["timing"]
+    assert abs(timing["sent"] - time.time()) < 1
+    assert timing["image_age"] is None  # Testbild ohne Kamera-Metadaten
+    assert 0 <= timing["ultrasonic_age"] < 0.5
+
+
+def test_exposure_time_from_libcamera_timestamp():
+    from intsys_car_v1.car import _exposure_time
+    assert _exposure_time({}) is None and _exposure_time({"SensorTimestamp": 0}) is None
+    stamp = time.clock_gettime_ns(time.CLOCK_BOOTTIME) - 30_000_000
+    assert 0.029 <= time.monotonic() - _exposure_time({"SensorTimestamp": stamp}) < 0.5
