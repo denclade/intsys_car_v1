@@ -12,13 +12,17 @@ der Antwort. Alles Technische (Socket, Port, Takt, Kamerafenster) steckt in CarS
 
 Steuerwerte bleiben stehen, bis sie geändert werden (wie ein Motor auf dem Fahrzeug).
 Zum Bild gehört genau eine Antwort; CarServer sendet sie beim nächsten next_frame().
-Kamerafenster, Tastatur (WASD) und Xbox-Controller laufen über pygame.
+Kamerafenster, Tastatur (WASD) und Xbox-Controller laufen über pygame. Neben dem Bild zeigt
+eine Spalte Sensor- und Aktorwerte (nur Anzeige; abschalten mit CarServer(show_info=False)).
 """
 import atexit
+import time
+from collections import deque
 
 import numpy as np
 import zmq
 
+from . import panel
 from .comm_lib import SerializingContext
 from .controller import XboxController, neutral
 from .protocol import (
@@ -84,7 +88,7 @@ class CarServer(ImageMixin):
     line_center_value = _line_value("centerValue")
     line_right_value = _line_value("rightValue")
 
-    def __init__(self, port=PORT, show_image=True):
+    def __init__(self, port=PORT, show_image=True, show_info=True):
         self.port = port
         self.message = {}      # Sensordaten des letzten Bildes (wie vom Fahrzeug gesendet)
         self.image = None      # letztes Kamerabild (numpy, BGR)
@@ -93,8 +97,14 @@ class CarServer(ImageMixin):
         self._calibration = {}
         self._reply_pending = False
         self._show_image = show_image
+        self._show_info = show_info  # Sensor-/Aktorwerte neben dem Kamerabild
+        self._frame_times = deque(maxlen=30)
+        self._received_at = None   # time.monotonic() des letzten Bildes
+        self._compute_time = None  # Zeit vom Bild bis zur Antwort (Schülerprogramm)
+        self._last_calibration_error = None  # (Text, Zeitpunkt), wird nur einmal gemeldet
         self._window = None
         self._window_size = None
+        self._panel_height = None
         self._xbox = None
         self._pygame = None
         self._pygame_failed = False
@@ -136,8 +146,11 @@ class CarServer(ImageMixin):
         self.image = image
         self.frame_count += 1
         self._reply_pending = True
+        self._received_at = time.monotonic()
+        self._frame_times.append(self._received_at)
         if self.message.get("calibration_error"):
             print(f"Kalibrierung abgelehnt: {self.message['calibration_error']}")
+            self._last_calibration_error = (str(self.message["calibration_error"]), self._received_at)
         return True
 
     def stop(self):
@@ -251,6 +264,8 @@ class CarServer(ImageMixin):
         except zmq.Again:
             print("Fahrzeug nimmt keine Antwort an")
         self._reply_pending = False
+        if self._received_at is not None:
+            self._compute_time = time.monotonic() - self._received_at
 
     def _show(self):
         """Kamerabild im pygame-Fenster zeigen; False, wenn beendet werden soll."""
@@ -272,10 +287,43 @@ class CarServer(ImageMixin):
             rgb = np.ascontiguousarray(self.image[:, :, 2::-1])  # OpenCV liefert BGR
             size = (rgb.shape[1], rgb.shape[0])
             surface = pygame.image.frombuffer(rgb.tobytes(), size, "RGB")
-        if self._window is None or self._window_size != size:
-            self._window = pygame.display.set_mode(size)
-            self._window_size = size
+        info = None
+        window_size = size
+        if self._show_info:
+            if self._panel_height is None:
+                self._panel_height = panel.needed_height(pygame)
+            window_size = (size[0] + panel.WIDTH, max(size[1], self._panel_height))
+            info, _ = panel.draw(pygame, self._info(), window_size[1])
+        if self._window is None or self._window_size != window_size:
+            self._window = pygame.display.set_mode(window_size)
+            self._window_size = window_size
             pygame.display.set_caption(TITLE)
+        self._window.fill((0, 0, 0))
         self._window.blit(surface, (0, 0))
+        if info is not None:
+            self._window.blit(info, (size[0], 0))
         pygame.display.flip()
         return True
+
+    def _info(self):
+        """Daten für die Info-Spalte (panel.draw)."""
+        now = time.monotonic()
+        times = self._frame_times
+        fps = None
+        if len(times) >= 2 and now - times[-1] <= panel.STALE_S:
+            fps = (len(times) - 1) / (times[-1] - times[0]) if times[-1] > times[0] else None
+        error = self._last_calibration_error
+        motors = None
+        if "left" in self._values or "right" in self._values:
+            motors = (self.left, self.right)
+        return {
+            "frames": self.frame_count,
+            "fps": fps,
+            "since": None if self._received_at is None else now - self._received_at,
+            "compute": self._compute_time,
+            "waiting": self.image is None,
+            "message": self.message,
+            "target": {key: getattr(self, key) for key in ("speed", "steering", "pan", "tilt")},
+            "motors": motors,
+            "calibration_error": error[0] if error and now - error[1] < 10 else None,
+        }

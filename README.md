@@ -75,6 +75,11 @@ while car.next_frame():       # wartet auf das nächste Bild; q oder Fenster sch
   Dashboard von intsys-car-v1-server. Gedrückte Tasten haben Vorrang vor dem Controller.
 - `key_pressed("space")`, `controller` (Rohdaten), `message` (Sensordaten des Fahrzeugs).
 - `calibrate("servo_steering", "compensate_angle", -8)`: Live-Kalibrierung, einmal gesendet.
+- Neben dem Kamerabild zeigt eine Spalte die aktuellen Werte (nur Anzeige): Verbindung (fps,
+  Bildalter, Rechenzeit bis zur Antwort), Ultraschall, Liniensensor (erkannt + Rohwert),
+  Aktoren gesendet vs. vom Fahrzeug gemeldet (Abweichung gelb), Kalibrierung und
+  `sensor_errors`. Abschalten mit `CarServer(show_info=False)`. Schriften: Inter und
+  JetBrains Mono (SIL OFL 1.1, liegen mit Lizenz in `fonts/`).
 
 Auf beiden Seiten wertet `car.brightness("left")` (0 … 255; `"center"`, `"right"`, `"all"`)
 und `car.color_share("red")` (% der Pixel; `"orange"`, `"yellow"`, `"green"`, `"blue"`) das

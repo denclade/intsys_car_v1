@@ -545,3 +545,30 @@ def test_sensor_mode_prefers_large_full_view_modes():
     assert sensor_mode(IMX219_MODES, 30)["size"] == (1640, 1232)
     assert sensor_mode(OV5647_MODES, 100) is None                # libcamera entscheidet
     assert sensor_mode([], 30) is None
+
+
+# --- Info-Spalte im Kamerafenster ---------------------------------------------
+
+def test_info_panel_draws_vehicle_data(monkeypatch):
+    pygame = pytest.importorskip("pygame")
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    from intsys_car_v1 import panel
+
+    car = CarServer(port=free_port())
+    try:
+        assert car._show()  # wartet: Spalte ohne Daten
+        assert car._window_size == (640 + panel.WIDTH, max(480, car._panel_height))
+        car.image = IMAGE
+        car.message = {"ultraschall": 12.5, "linien": {"centerDetected": True, "centerValue": 210},
+                       "actor_data": {"speed": 40, "steering_angle": -15},
+                       "sensor_errors": {"linien": "I2C"}, "timing": {"image_age": 0.07},
+                       "calibration": {"servo_steering": {"compensate_angle": -12}}}
+        car.speed, car.left = 40, 60
+        info = car._info()
+        assert info["target"]["steering"] == 0 and info["motors"] == (60, 40)
+        assert car._show()
+        assert car._window_size == (64 + panel.WIDTH, car._panel_height)
+        _, height = panel.draw(pygame, info, car._panel_height)
+        assert height == car._panel_height  # Fenster springt nicht
+    finally:
+        car.close()
