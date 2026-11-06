@@ -24,6 +24,7 @@ import atexit
 import time
 import threading
 import uuid
+from pathlib import Path
 
 import zmq
 
@@ -77,23 +78,32 @@ def _exposure_time(metadata):
     return time.monotonic() - age if 0 <= age < 5 else None
 
 
-def camera_tuning(picamera2, noir):
+def camera_tuning(picamera2, noir, sysfs="/sys/class/video4linux"):
     """Tuning für Picamera2(tuning=…): bei NoIR-Modulen <sensor>_noir.json, sonst None (Standard).
 
-    Der Sensor (z. B. ov5647, imx219) wird ausgelesen; den fehlenden IR-Filter kann er nicht
-    melden, deshalb steht das in car.toml (camera.noir).
+    Den fehlenden IR-Filter kann der Sensor nicht melden, deshalb steht er in car.toml
+    (camera.noir). Das Sensormodell (z. B. ov5647, imx219) kommt aus sysfs, nicht aus
+    Picamera2.global_camera_info(): Die startet libcamera schon mit dem Standard-Tuning,
+    und Picamera2(tuning=…) wirkt danach nicht mehr.
     """
     if not noir:
         return None
-    cameras = picamera2.global_camera_info()
-    if not cameras:
-        return None  # Picamera2() meldet dann selbst, dass keine Kamera da ist
-    model = cameras[0]["Model"]
-    try:
-        return picamera2.load_tuning_file(f"{model}_noir.json")
-    except RuntimeError:
-        print(f"Keine NoIR-Tuning-Datei für Sensor {model}, nutze das Standard-Tuning")
-        return None
+    models = []
+    for name_file in sorted(Path(sysfs).glob("*/name")):  # z. B. "ov5647 10-0036"
+        try:
+            model = name_file.read_text().split()[0]
+        except (OSError, IndexError):
+            continue
+        if model not in models:
+            models.append(model)
+    for model in models:  # andere Geräte (CSI, ISP) haben keine Tuning-Datei
+        try:
+            return picamera2.load_tuning_file(f"{model}_noir.json")
+        except RuntimeError:
+            continue
+    print(f"Keine NoIR-Tuning-Datei gefunden (Geräte: {', '.join(models) or 'keine'}), "
+          "nutze das Standard-Tuning")
+    return None
 
 
 def sensor_mode(modes, fps):

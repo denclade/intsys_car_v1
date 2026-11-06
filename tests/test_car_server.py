@@ -495,16 +495,16 @@ def test_server_heartbeat_frees_port_from_vanished_car(monkeypatch):
         server.close()
 
 
-def test_camera_tuning_for_noir_modules():
+def test_camera_tuning_for_noir_modules(tmp_path):
     from intsys_car_v1.car import camera_tuning
 
     class FakePicamera2:
-        cameras = [{"Model": "ov5647"}]
         files = {"ov5647_noir.json": {"algorithms": "noir"}}
 
-        @classmethod
-        def global_camera_info(cls):
-            return cls.cameras
+        @staticmethod
+        def global_camera_info():
+            # Startet libcamera mit dem Standard-Tuning; danach wirkte tuning=… nicht mehr.
+            raise AssertionError("global_camera_info() vor Picamera2(tuning=…)")
 
         @classmethod
         def load_tuning_file(cls, name):
@@ -512,12 +512,15 @@ def test_camera_tuning_for_noir_modules():
                 raise RuntimeError("Tuning file not found")
             return cls.files[name]
 
-    assert camera_tuning(FakePicamera2, False) is None  # normales Modul: Standard
-    assert camera_tuning(FakePicamera2, True) == {"algorithms": "noir"}
-    FakePicamera2.cameras = [{"Model": "unknown"}]
-    assert camera_tuning(FakePicamera2, True) is None  # keine NoIR-Datei: Standard statt Absturz
-    FakePicamera2.cameras = []
-    assert camera_tuning(FakePicamera2, True) is None
+    sysfs = tmp_path / "video4linux"
+    for device, name in (("v4l-subdev0", "rp1-cfe-csi2_ch0"), ("v4l-subdev1", "ov5647 10-0036")):
+        (sysfs / device).mkdir(parents=True)
+        (sysfs / device / "name").write_text(name + "\n")
+    assert camera_tuning(FakePicamera2, False, sysfs) is None  # normales Modul: Standard
+    assert camera_tuning(FakePicamera2, True, sysfs) == {"algorithms": "noir"}
+    (sysfs / "v4l-subdev1" / "name").write_text("imx999 10-0010\n")
+    assert camera_tuning(FakePicamera2, True, sysfs) is None  # keine NoIR-Datei: Standard statt Absturz
+    assert camera_tuning(FakePicamera2, True, tmp_path / "fehlt") is None
 
 
 # Picamera2.sensor_modes (gekürzt) der beiden Kameras in der Flotte
