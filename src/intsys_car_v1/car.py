@@ -22,6 +22,7 @@ für dieselben Pins anlegen.
 """
 import atexit
 import time
+import threading
 import uuid
 
 import zmq
@@ -40,7 +41,10 @@ from .protocol import (
 from .sensors import HC_SR04, AnalogGrayscale
 from .vision import ImageMixin
 
-FRAME_INTERVAL = 0.05  # höchstens 20 Durchläufe pro Sekunde
+FRAME_INTERVAL = 1 / 30  # Ziel 30 Bilder/s
+ULTRASONIC_INTERVAL = 0.07  # >60 ms zwischen Triggern
+ULTRASONIC_MAX_AGE = 0.5  # ältere Messwerte gelten als unbekannt
+ULTRASONIC_STARTUP_WAIT = 0.2  # Car() wartet so lange auf die erste Messung (eine dauert <= ~80 ms)
 REPLY_TIMEOUT_MS = 2000  # ohne Antwort nach 2 s anhalten (Standard)
 _SERVOS = {"steering": "servo_steering", "pan": "servo_pan", "tilt": "servo_tilt"}
 
@@ -95,6 +99,10 @@ class Car(ImageMixin):
         self._values = dict.fromkeys(ACTUATOR_LIMITS, 0.0)
         self._calibration_session = uuid.uuid4().hex
         self._calibration_error = None
+        self._distance_sample = None  # (Abstand oder None, Fehler oder None, Zeitpunkt)
+        self._distance_ready = threading.Event()
+        self._ultrasonic_stop = threading.Event()
+        self._ultrasonic_thread = None
         self._sensors = None
         self._sensors_time = None
         self._camera = None
@@ -102,10 +110,13 @@ class Car(ImageMixin):
         self._context = None
         self._socket = None
         self._server_lost = False
-        self._last_frame = None
+        self._frame_deadline = None
         self._closed = False
         atexit.register(self.close)
         self.stop()
+        self._ultrasonic_thread = threading.Thread(target=self._sample_distance, name="ultrasonic", daemon=True)
+        self._ultrasonic_thread.start()
+        self._distance_ready.wait(ULTRASONIC_STARTUP_WAIT)  # sonst gälte der Weg anfangs als frei
 
     # --- Steuerung ----------------------------------------------------------
 
@@ -132,7 +143,7 @@ class Car(ImageMixin):
 
     @property
     def distance(self):
-        """Ultraschall-Abstand in cm; 999 ohne Echo."""
+        """Ultraschall-Abstand in cm; 999 ohne Echo oder ohne aktuellen Messwert."""
         distance = self._measure()["ultraschall"]
         return NO_ECHO if distance is None else distance
 
@@ -144,15 +155,23 @@ class Car(ImageMixin):
         return self._image
 
     def _measure(self, force=False):
-        """Ultraschall und Liniensensor, höchstens alle FRAME_INTERVAL Sekunden neu gemessen."""
+        """Liniensensor (höchstens alle FRAME_INTERVAL Sekunden neu gelesen) und letzter Ultraschallwert.
+
+        Der Ultraschall misst im Hintergrund (_sample_distance); fehlt ein Wert oder ist er älter
+        als ULTRASONIC_MAX_AGE, ist der Abstand None und sensor_errors["ultrasonic"] gesetzt.
+        """
         now = time.monotonic()
         if force or self._sensors is None or now - self._sensors_time >= FRAME_INTERVAL:
             errors = {}
-            try:
-                distance = self.ultrasonic.get_distance_cm()  # kein Echo: None
-            except OSError as error:
-                distance = None
-                errors["ultrasonic"] = str(error)
+            sample = self._distance_sample
+            if sample is None:
+                distance, error = None, "noch kein Messwert"
+            else:
+                distance, error, measured = sample
+                if now - measured > ULTRASONIC_MAX_AGE:
+                    distance, error = None, f"Messwert veraltet ({now - measured:.1f} s)"
+            if error:
+                errors["ultrasonic"] = error
             try:
                 lines = self.line_sensor.get_line_detection_data()
             except OSError as error:
@@ -163,6 +182,19 @@ class Car(ImageMixin):
             self.sensor_errors = errors
         return self._sensors
 
+    def _sample_distance(self):
+        """Hintergrundthread: misst etwa alle ULTRASONIC_INTERVAL Sekunden, bis close()."""
+        while not self._ultrasonic_stop.is_set():
+            started = time.monotonic()
+            try:
+                distance, error = self.ultrasonic.get_distance_cm(), None
+            except Exception as exc:  # Thread darf nicht sterben, sonst bliebe der Wert stehen
+                distance, error = None, f"{type(exc).__name__}: {exc}"
+            self._distance_sample = (distance, error, time.monotonic())
+            self._distance_ready.set()
+            if self._ultrasonic_stop.wait(max(0, ULTRASONIC_INTERVAL - (time.monotonic() - started))):
+                break
+
     def _capture(self):
         if self._camera is None:
             from libcamera import Transform
@@ -171,6 +203,7 @@ class Car(ImageMixin):
             camera = Picamera2()
             camera.configure(camera.create_video_configuration(
                 main={"format": "XRGB8888", "size": (640, 480)},
+                controls={"FrameRate": 30},  # passend zu FRAME_INTERVAL
                 transform=Transform(hflip=flip["hflip"], vflip=flip["vflip"])))
             camera.start()
             time.sleep(2)  # Sensor aufwärmen lassen
@@ -191,17 +224,23 @@ class Car(ImageMixin):
         print(f"Verbinde mit Server {server_ip}:{port}")
 
     def next_frame(self):
-        """Ein Durchlauf der Fahrschleife (höchstens 20 pro Sekunde).
+        """Ein Durchlauf der Fahrschleife (höchstens 30 pro Sekunde).
 
-        Misst die Sensoren neu. Mit Server: Bild + Sensordaten senden und nach der
-        Antwort fahren; bleibt sie 2 s aus, hält das Fahrzeug an. False nach Strg+C.
+        Liest den Liniensensor und den letzten Ultraschallwert. Mit Server: Bild + Sensordaten
+        senden und nach der Antwort fahren; bleibt sie 2 s aus, hält das Fahrzeug an.
+        False nach Strg+C.
         """
         if self._closed:
             return False
         try:
-            if self._last_frame is not None:
-                time.sleep(max(0.0, self._last_frame + FRAME_INTERVAL - time.monotonic()))
-            self._last_frame = time.monotonic()
+            # Fester Takt: Verspätungen beim Aufwachen summieren sich nicht auf. Wer mehr als
+            # einen Durchlauf hinterherhängt, setzt neu auf, statt Durchläufe nachzuholen.
+            if self._frame_deadline is not None:
+                time.sleep(max(0.0, self._frame_deadline - time.monotonic()))
+            start = time.monotonic()
+            if self._frame_deadline is None or start - self._frame_deadline > FRAME_INTERVAL:
+                self._frame_deadline = start
+            self._frame_deadline += FRAME_INTERVAL
             self._measure(force=True)
             self._image = None
             if self._socket is not None:
@@ -299,7 +338,14 @@ class Car(ImageMixin):
         if self._closed:
             return
         self._closed = True
-        for action in (self.stop, self.motor_left.close, self.motor_right.close,
+        try:
+            self.stop()
+        except Exception as error:
+            print(f"Fehler beim Anhalten: {error}")
+        self._ultrasonic_stop.set()
+        if self._ultrasonic_thread is not None:
+            self._ultrasonic_thread.join()
+        for action in (self.motor_left.close, self.motor_right.close,
                        self.ultrasonic.close, self.line_sensor.close):
             try:
                 action()

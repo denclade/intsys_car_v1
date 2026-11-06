@@ -49,7 +49,7 @@ from intsys_car_v1 import Car
 
 car = Car()
 car.connect("192.168.0.10")   # optional: Schüler-Server
-while car.next_frame():       # max. 20/s; mit Server: Bild + Sensordaten senden, Antwort fahren
+while car.next_frame():       # max. 30/s; mit Server: Bild + Sensordaten senden, Antwort fahren
     if car.distance < 15:
         car.speed = 0         # eigene Regeln nach der Server-Antwort
 ```
@@ -180,3 +180,13 @@ mise lädt `.env` automatisch und blendet die Werte in seinen Ausgaben aus.
 
 `publish` und `publish:test` bauen vorher immer frisch (`clean` → `build`). Alle Tasks:
 `mise tasks`.
+
+Die Fahrschleife hat einen Zieltakt von 30 Hz; die Kamera wird mit 640 × 480
+und 30 FPS konfiguriert (OV5647 unterstützt diesen Modus). Bei Serverbetrieb
+begrenzen auch Bildverarbeitung und Antwortzeit den tatsächlich erreichten Takt.
+Der Liniensensor wird pro Durchlauf gelesen. Ultraschall misst unabhängig
+in einem Hintergrundthread mit mindestens 70 ms zwischen Messstarts; verwendet
+wird der letzte abgeschlossene Messwert. `Car()` wartet beim Start kurz auf die
+erste Messung. Ist ein Messwert älter als 0,5 s (oder fehlt er), gilt der Abstand
+als unbekannt: `None` im Protokoll, `999` über `car.distance`, Grund in
+`car.sensor_errors["ultrasonic"]`.

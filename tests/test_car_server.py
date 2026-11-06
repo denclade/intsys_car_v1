@@ -2,6 +2,7 @@
 I2C is a fake bus, GPIO is gpiozero's MockFactory, the camera is a numpy array."""
 import socket
 import threading
+import time
 
 import numpy as np
 import pytest
@@ -336,3 +337,70 @@ def test_server_stop(server):
     car.left, car.steering = 30, 20
     car.stop()
     assert (car.speed, car.left, car.right, car.steering) == (0.0, 0.0, 0.0, 0.0)
+
+
+def stop_ultrasonic(car):
+    car._ultrasonic_stop.set()
+    car._ultrasonic_thread.join()
+
+
+def test_car_frames_do_not_wait_for_ultrasonic(car, monkeypatch):
+    entered, finish = threading.Event(), threading.Event()
+
+    def slow_distance():
+        entered.set()
+        finish.wait(1)
+        return 42
+
+    monkeypatch.setattr(car.ultrasonic, "get_distance_cm", slow_distance)
+    try:
+        assert entered.wait(1)
+        started = time.monotonic()
+        assert car.next_frame() and car.next_frame()
+        assert time.monotonic() - started < 0.5
+        assert car.sensor_data()["ultraschall"] is None
+        assert not finish.is_set()
+        finish.set()
+        stop_ultrasonic(car)
+        assert car._measure(force=True)["ultraschall"] == 42
+    finally:
+        finish.set()
+
+
+def test_car_waits_for_first_distance(car):
+    assert car._distance_sample is not None  # Car() hat auf die erste Messung gewartet
+    assert "ultrasonic" not in car.sensor_errors
+
+
+def test_car_stale_distance_is_unknown(car):
+    stop_ultrasonic(car)
+    car._distance_sample = (12.0, None, time.monotonic())
+    assert car._measure(force=True)["ultraschall"] == 12.0 and car.distance == 12.0
+    car._distance_sample = (12.0, None, time.monotonic() - 1)
+    assert car._measure(force=True)["ultraschall"] is None and car.distance == 999.0
+    assert "veraltet" in car.sensor_errors["ultrasonic"]
+
+
+def test_car_ultrasonic_thread_survives_unexpected_errors(car, monkeypatch):
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("kaputt")
+        return 33.0
+
+    monkeypatch.setattr(car.ultrasonic, "get_distance_cm", flaky)
+    deadline = time.monotonic() + 2
+    while len(calls) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.01)
+    assert car._ultrasonic_thread.is_alive()
+    assert car._measure(force=True)["ultraschall"] == 33.0
+
+
+def test_car_frame_rate_keeps_a_fixed_grid(car):
+    started = time.monotonic()
+    for _ in range(31):
+        car.next_frame()
+    assert 0.95 < time.monotonic() - started < 1.15  # 30 Abstände zu 1/30 s
