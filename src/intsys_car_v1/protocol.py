@@ -9,6 +9,14 @@ import numbers
 
 PORT = 5555
 
+# ZeroMQ-Heartbeat (beide Seiten): Ein zmq.PAIR-Socket nimmt nur einen Partner an. Ist das
+# Fahrzeug ohne Abmeldung weg (WLAN, Akku), gibt der Heartbeat die tote Verbindung nach
+# HEARTBEAT_TIMEOUT_MS frei, sonst käme kein neues Fahrzeug mehr durch.
+HEARTBEAT_IVL_MS = 1000
+HEARTBEAT_TIMEOUT_MS = 3000
+# JPEG-Qualität der Kamerabilder (SerializingSocket.send_img, Car); kleiner = weniger WLAN-Last
+JPEG_QUALITY = 90
+
 # Grenzen der Steuerwerte: Motoren in %, Winkel in Grad (Lenkung positiv = rechts,
 # Neigen negativ = nach oben).
 ACTUATOR_LIMITS = {

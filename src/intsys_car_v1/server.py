@@ -21,7 +21,15 @@ import zmq
 
 from .comm_lib import SerializingContext
 from .controller import XboxController, neutral
-from .protocol import NO_ECHO, PORT, actuator_value, check_calibration, parse_reply
+from .protocol import (
+    HEARTBEAT_IVL_MS,
+    HEARTBEAT_TIMEOUT_MS,
+    NO_ECHO,
+    PORT,
+    actuator_value,
+    check_calibration,
+    parse_reply,
+)
 from .vision import ImageMixin
 
 TITLE = "intsys car (WASD fahren, q beenden)"
@@ -95,6 +103,8 @@ class CarServer(ImageMixin):
         self._socket = self._context.socket(zmq.PAIR)
         self._socket.setsockopt(zmq.SNDTIMEO, 500)
         self._socket.setsockopt(zmq.LINGER, 0)
+        # Ohne Heartbeat blockiert ein ohne Abmeldung verschwundenes Fahrzeug den Port.
+        self._socket.enable_heartbeat(HEARTBEAT_IVL_MS, HEARTBEAT_TIMEOUT_MS)
         self._socket.bind(f"tcp://*:{port}")
         atexit.register(self.close)
         print(f"Server wartet auf das Fahrzeug (Port {port}). Beenden: q im Kamerafenster oder Strg+C")

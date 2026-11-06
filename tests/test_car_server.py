@@ -419,3 +419,77 @@ def test_exposure_time_from_libcamera_timestamp():
     assert _exposure_time({}) is None and _exposure_time({"SensorTimestamp": 0}) is None
     stamp = time.clock_gettime_ns(time.CLOCK_BOOTTIME) - 30_000_000
     assert 0.029 <= time.monotonic() - _exposure_time({"SensorTimestamp": stamp}) < 0.5
+
+
+def test_car_uses_the_newest_reply(car):
+    """Server mit Extra-Antworten (ältere Dashboards): kein Rückstau alter Befehle."""
+    port = free_port()
+    ctx = SerializingContext()
+    server = ctx.socket(zmq.PAIR)
+    server.bind(f"tcp://127.0.0.1:{port}")
+    try:
+        car.connect("127.0.0.1", port)
+        first = threading.Thread(target=car.next_frame)
+        first.start()
+        server.recv_img()
+        server.send_json({"speed": 5})
+        first.join(3)
+        assert car.speed == 5.0
+        for speed in (10, 20, 30):  # unaufgefordert, liegen vor dem nächsten Bild bereit
+            server.send_json({"speed": speed})
+        time.sleep(0.1)
+        assert car.next_frame()
+        server.recv_img()
+        assert car.speed == 30.0
+        assert not car._socket.poll(0)  # nichts mehr im Rückstau
+    finally:
+        server.close(linger=0)
+        ctx.term()
+
+
+OLD_CAR = """
+import sys, time
+import numpy as np, zmq
+from intsys_car_v1.comm_lib import SerializingContext
+ctx = SerializingContext(); s = ctx.socket(zmq.PAIR); s.connect(f"tcp://127.0.0.1:{sys.argv[1]}")
+s.send_img(np.zeros((8, 8, 3), np.uint8), {}); s.recv_json()
+print("ready", flush=True); time.sleep(30)
+"""
+
+
+def test_server_heartbeat_frees_port_from_vanished_car(monkeypatch):
+    """Fahrzeug ohne Abmeldung weg (eingefrorener Prozess): ein neues kommt trotzdem durch."""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import intsys_car_v1.server as server_module
+    monkeypatch.setattr(server_module, "HEARTBEAT_IVL_MS", 100)
+    monkeypatch.setattr(server_module, "HEARTBEAT_TIMEOUT_MS", 300)
+    port = free_port()
+    server = CarServer(port=port, show_image=False)
+    old = subprocess.Popen([sys.executable, "-c", OLD_CAR, str(port)], stdout=subprocess.PIPE, text=True)
+    ctx = SerializingContext()
+    new = ctx.socket(zmq.PAIR)
+    try:
+        assert server.next_frame()
+        server._send_reply()
+        assert old.stdout.readline().strip() == "ready"
+        os.kill(old.pid, signal.SIGSTOP)
+        new.setsockopt(zmq.SNDTIMEO, 0)
+        new.connect(f"tcp://127.0.0.1:{port}")
+        deadline = time.monotonic() + 5
+        received = False
+        while not received and time.monotonic() < deadline:
+            try:
+                new.send_img(IMAGE, {"ultraschall": 7})
+            except zmq.Again:
+                pass
+            received = server._socket.poll(200)
+        assert received
+    finally:
+        os.kill(old.pid, signal.SIGKILL)
+        old.wait()
+        new.close(linger=0)
+        ctx.term()
+        server.close()

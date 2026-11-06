@@ -195,3 +195,10 @@ Jedes Bild trägt ab 0.0.10 `timing` für Latenzanzeigen (wie der SPARK-E-Agent)
 `sent` (Sendezeit, Unix-Sekunden), `image_age` (Belichtungsbeginn bis Senden) und
 `ultrasonic_age` (Ende der Messung bis Senden), beide in Sekunden auf dem Fahrzeug
 gemessen; unbekannt ist `None`.
+
+Verbindung (ab 0.0.10): `Car` und `CarServer` setzen einen ZeroMQ-Heartbeat (1 s,
+Zeitlimit 3 s). Ein ohne Abmeldung verschwundenes Fahrzeug blockiert den
+`zmq.PAIR`-Port des Servers dann nur einige Sekunden statt bis zum Neustart.
+Liegen beim Fahrzeug mehrere Antworten bereit, nimmt `Car` die neueste.
+`Car(jpeg_quality=90)` legt die JPEG-Qualität der gesendeten Bilder fest
+(kleiner = weniger WLAN-Last).

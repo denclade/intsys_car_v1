@@ -32,6 +32,9 @@ from .comm_lib import SerializingContext
 from .config import load_car_config
 from .protocol import (
     ACTUATOR_LIMITS,
+    HEARTBEAT_IVL_MS,
+    HEARTBEAT_TIMEOUT_MS,
+    JPEG_QUALITY,
     NO_ECHO,
     PORT,
     actuator_value,
@@ -100,8 +103,9 @@ class Car(ImageMixin):
     line_center_value = _line_value("centerValue")
     line_right_value = _line_value("rightValue")
 
-    def __init__(self, config=None, factory=None):
+    def __init__(self, config=None, factory=None, jpeg_quality=JPEG_QUALITY):
         self.config = config if config is not None else load_car_config()
+        self.jpeg_quality = jpeg_quality  # Bilder an den Server; kleiner = weniger WLAN-Last
         if factory is None:
             from gpiozero.pins.lgpio import LGPIOFactory
             factory = LGPIOFactory()
@@ -249,6 +253,7 @@ class Car(ImageMixin):
         self._socket.setsockopt(zmq.RCVTIMEO, REPLY_TIMEOUT_MS)
         self._socket.setsockopt(zmq.SNDTIMEO, REPLY_TIMEOUT_MS)
         self._socket.setsockopt(zmq.LINGER, 0)
+        self._socket.enable_heartbeat(HEARTBEAT_IVL_MS, HEARTBEAT_TIMEOUT_MS)
         self._socket.connect(f"tcp://{server_ip}:{port}")
         print(f"Verbinde mit Server {server_ip}:{port}")
 
@@ -300,9 +305,13 @@ class Car(ImageMixin):
 
     def _exchange(self):
         try:
-            self._socket.send_img(self.image, self.sensor_data())
+            self._socket.send_img(self.image, self.sensor_data(), self.jpeg_quality)
             self._calibration_error = None  # einmal gemeldet
             reply = self._socket.recv_json()
+            # Schickt ein Server mehr als eine Antwort pro Bild, gilt die neueste;
+            # sonst stauen sich Antworten und das Fahrzeug führe mit alten Befehlen.
+            while self._socket.poll(0):
+                reply = self._socket.recv_json()
         except zmq.Again:
             if not self._server_lost:
                 print("Keine Antwort vom Server, Fahrzeug hält an")

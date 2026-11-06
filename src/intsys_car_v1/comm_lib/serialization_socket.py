@@ -11,9 +11,16 @@ class SerializingSocket(zmq.Socket):
     Also used for sending / receiving jpg compressed OpenCV images.
     """
 
-    def send_img(self, frame, msg):
-        ret_code, img = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    def send_img(self, frame, msg, quality=90):
+        ret_code, img = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
         self.send_array(img, msg)
+
+    def enable_heartbeat(self, interval_ms=1000, timeout_ms=3000):
+        """ZMTP-Heartbeat: eine tote Verbindung (Partner ohne Abmeldung weg) wird nach
+        timeout_ms geschlossen; ein zmq.PAIR-Socket nimmt dann wieder einen neuen Partner an."""
+        self.setsockopt(zmq.HEARTBEAT_IVL, interval_ms)
+        self.setsockopt(zmq.HEARTBEAT_TIMEOUT, timeout_ms)
+        self.setsockopt(zmq.HEARTBEAT_TTL, timeout_ms)
 
     def recv_img(self):
         msg, img = self.recv_array()
