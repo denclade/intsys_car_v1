@@ -208,3 +208,9 @@ Kamera ohne IR-Filter (NoIR-Modul, ab 0.0.11): in `car.toml` `[camera] noir = tr
 hat das Bild einen grün/magenta Farbstich. Der Sensor kann den fehlenden Filter nicht
 selbst melden. Für eigene Picamera2-Skripte: `Picamera2(tuning=camera_tuning(Picamera2,
 config["camera"]["noir"]))` mit `from intsys_car_v1.car import camera_tuning`.
+
+Sensor-Modus (ab 0.0.11): `Car` nimmt den größten Modus mit vollem Bildwinkel, der
+30 FPS schafft (OV5647: 1296 × 972), und lässt den ISP auf 640 × 480 verkleinern.
+Das ist deutlich schärfer und rauscht weniger als der kleinste Modus, den libcamera
+sonst wählt. Für eigene Skripte: `sensor_mode(camera.sensor_modes, fps)` aus
+`intsys_car_v1.car`, Ergebnis als `raw={"size": mode["size"]}`.

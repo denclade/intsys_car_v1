@@ -96,6 +96,24 @@ def camera_tuning(picamera2, noir):
         return None
 
 
+def sensor_mode(modes, fps):
+    """Sensor-Modus für Picamera2 (raw={"size": …}): der größte mit vollem Bildwinkel, der fps schafft.
+
+    Ohne Vorgabe nimmt libcamera den kleinsten passenden Modus; beim OV5647 ist das für
+    640 × 480 ein stark zusammengefasster Modus mit wenig Schärfe und viel Rauschen. Ein
+    größerer Modus, den der ISP herunterskaliert, sieht deutlich besser aus (OV5647:
+    1296 × 972, IMX219: 1640 × 1232). None, wenn kein Modus fps schafft (libcamera wählt).
+    """
+    fast = [mode for mode in modes if mode.get("fps", 0) >= fps]
+    if not fast:
+        return None
+    def view(mode):  # Bildwinkel als Fläche des genutzten Sensorausschnitts
+        return mode["crop_limits"][2] * mode["crop_limits"][3]
+    widest = max(view(mode) for mode in fast)
+    full_view = [mode for mode in fast if view(mode) >= 0.95 * widest]
+    return max(full_view, key=lambda mode: mode["size"][0] * mode["size"][1])
+
+
 def _timing(image_time, ultrasonic_time):
     """Zeitfelder fürs Protokoll (wie SPARK-E): Sendezeit (Unix) und Alter der Daten in s."""
     now = time.monotonic()
@@ -247,8 +265,10 @@ class Car(ImageMixin):
             from picamera2 import Picamera2
             flip = self.config["camera"]
             camera = Picamera2(tuning=camera_tuning(Picamera2, flip.get("noir", False)))
+            mode = sensor_mode(camera.sensor_modes, 30)
             camera.configure(camera.create_video_configuration(
                 main={"format": "XRGB8888", "size": (640, 480)},
+                raw={"size": mode["size"]} if mode else {},  # schärfer, weniger Rauschen
                 controls={"FrameRate": 30},  # passend zu FRAME_INTERVAL
                 transform=Transform(hflip=flip["hflip"], vflip=flip["vflip"])))
             camera.start()

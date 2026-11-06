@@ -518,3 +518,27 @@ def test_camera_tuning_for_noir_modules():
     assert camera_tuning(FakePicamera2, True) is None  # keine NoIR-Datei: Standard statt Absturz
     FakePicamera2.cameras = []
     assert camera_tuning(FakePicamera2, True) is None
+
+
+# Picamera2.sensor_modes (gekürzt) der beiden Kameras in der Flotte
+OV5647_MODES = [
+    {"size": (640, 480), "fps": 58.92, "crop_limits": (16, 0, 2560, 1920)},
+    {"size": (1296, 972), "fps": 46.34, "crop_limits": (0, 0, 2592, 1944)},
+    {"size": (1920, 1080), "fps": 32.81, "crop_limits": (348, 434, 1928, 1080)},
+    {"size": (2592, 1944), "fps": 15.63, "crop_limits": (0, 0, 2592, 1944)},
+]
+IMX219_MODES = [
+    {"size": (640, 480), "fps": 103.33, "crop_limits": (1000, 752, 1280, 960)},
+    {"size": (1640, 1232), "fps": 41.85, "crop_limits": (0, 0, 3280, 2464)},
+    {"size": (1920, 1080), "fps": 47.57, "crop_limits": (680, 692, 1920, 1080)},
+    {"size": (3280, 2464), "fps": 21.19, "crop_limits": (0, 0, 3280, 2464)},
+]
+
+
+def test_sensor_mode_prefers_large_full_view_modes():
+    from intsys_car_v1.car import sensor_mode
+    assert sensor_mode(OV5647_MODES, 30)["size"] == (1296, 972)  # nicht 640 × 480, nicht der 1080p-Ausschnitt
+    assert sensor_mode(OV5647_MODES, 50)["size"] == (640, 480)   # nur der schafft 50 FPS
+    assert sensor_mode(IMX219_MODES, 30)["size"] == (1640, 1232)
+    assert sensor_mode(OV5647_MODES, 100) is None                # libcamera entscheidet
+    assert sensor_mode([], 30) is None
