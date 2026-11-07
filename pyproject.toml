@@ -29,8 +29,10 @@ license-files = ["LICEN[CS]E*"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
-# Schülerrechner: Kamerafenster, Tastatur und Xbox-Controller für CarServer
+# Schülerrechner: Kamerafenster, Tastatur und Xbox-/Steam-Controller für CarServer
 server = ["pygame"]
+# SDL 3 für nativen Steam-Controller-Support ohne laufendes Steam
+controller = ["pysdl3"]
 
 [project.urls]
 Homepage = "https://github.com/zumlernen-de/intsys_car_v1"

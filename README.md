@@ -64,7 +64,7 @@ from intsys_car_v1 import CarServer
 
 car = CarServer()             # Port 5555, Kamerafenster
 while car.next_frame():       # wartet auf das nächste Bild; q oder Fenster schließen beendet
-    car.drive_manually()      # WASD im Fenster oder Xbox-Controller
+    car.drive_manually()      # WASD im Fenster oder Xbox-/Steam-Controller
     if car.distance < 20 and car.speed > 0:
         car.speed = 0
 ```
@@ -224,3 +224,34 @@ Sensor-Modus (ab 0.0.11): `Car` nimmt den größten Modus mit vollem Bildwinkel,
 Das ist deutlich schärfer und rauscht weniger als der kleinste Modus, den libcamera
 sonst wählt. Für eigene Skripte: `sensor_mode(camera.sensor_modes, fps)` aus
 `intsys_car_v1.car`, Ergebnis als `raw={"size": mode["size"]}`.
+
+## Controller (Xbox und Steam)
+
+`CarServer.controller`, `drive_manually()`, das Server-Dashboard und die Blockly-Blöcke
+verwenden `intsys_car_v1.controller.Gamepad`. Trigger rechts fährt vorwärts, links rückwärts;
+der linke Stick lenkt, der rechte bewegt die Kamera. An- und Abstecken wird erkannt;
+ohne Gerät werden neutrale Werte gesendet. `XboxController` bleibt als kompatibler Alias erhalten.
+
+- `pip install "intsys_car_v1[server]"`: pygame mit standardisiertem SDL-2-GameController-Mapping,
+  etwa für Xbox und Steam Virtual Gamepad über Steam Input.
+- `pip install "intsys_car_v1[server,controller]"` und einmal
+  `python -m intsys_car_v1.controller --sdl3 --once`: SDL 3 über PySDL3 für Steam Controller
+  ohne Steam. Für neue Steam Controller wird eine aktuelle SDL 3 empfohlen
+  (mindestens 3.4.10, abhängig von Firmware und Betriebssystem). Alternativ SDL 3 als Systembibliothek installieren.
+
+`auto` bevorzugt SDL 3 und fällt bei fehlender Bibliothek auf pygame zurück.
+`INTSYS_CONTROLLER=pygame` bzw. `sdl3` erzwingt das Backend;
+`INTSYS_SDL3_LIBRARY` setzt einen eigenen Bibliothekspfad. Downloads erfolgen nur beim
+expliziten Aufruf von `--sdl3`. Live-Test: `python -m intsys_car_v1.controller`.
+
+Eigene Anwendungen erstellen, lesen und schließen `Gamepad` im Hauptthread (`close()`). Wenn sie ein pygame-Modul an den
+Konstruktor übergeben, verarbeiten sie dessen Ereignisse selbst vor `read()`.
+
+SDL 3 bleibt als Geräteadapter isoliert; pygame stellt weiterhin Kamerafenster und
+Tastatur bereit. Die Gamepad-API vermeidet gerätespezifische Achsenlisten. Nur der alte
+Xbox-360-Fallback unter Linux verwendet rohe Achsen; unbekannte Layouts liefern neutrale
+Werte und brauchen ein SDL-Mapping.
+
+Backend-Wahl und Thread-Regeln: [SDL Gamepad-API](https://wiki.libsdl.org/SDL3/CategoryGamepad),
+[SDL-Initialisierung](https://wiki.libsdl.org/SDL3/SDL_InitSubSystem),
+[aktuelle SDL-Releases](https://github.com/libsdl-org/SDL/releases).

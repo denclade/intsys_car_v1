@@ -12,7 +12,8 @@ der Antwort. Alles Technische (Socket, Port, Takt, Kamerafenster) steckt in CarS
 
 Steuerwerte bleiben stehen, bis sie geändert werden (wie ein Motor auf dem Fahrzeug).
 Zum Bild gehört genau eine Antwort; CarServer sendet sie beim nächsten next_frame().
-Kamerafenster, Tastatur (WASD) und Xbox-Controller laufen über pygame. Neben dem Bild zeigt
+Kamerafenster und Tastatur (WASD) laufen über pygame, Controller (Xbox, Steam Controller 2 …)
+über intsys_car_v1.controller (SDL 3 oder pygame). Neben dem Bild zeigt
 eine Spalte Sensor- und Aktorwerte (nur Anzeige; abschalten mit CarServer(show_info=False)).
 """
 import atexit
@@ -24,7 +25,6 @@ import zmq
 
 from . import panel
 from .comm_lib import SerializingContext
-from .controller import XboxController, neutral
 from .protocol import (
     HEARTBEAT_IVL_MS,
     HEARTBEAT_TIMEOUT_MS,
@@ -107,7 +107,7 @@ class CarServer(ImageMixin):
         self._panel_scale = 1.0     # Schriftgröße der Info-Spalte (Strg +/−)
         self._panel_heights = {}    # benötigte Höhe der Spalte je Schriftgröße
         self._camera_cache = None   # skaliertes Bild, solange sich Bild und Größe nicht ändern
-        self._xbox = None
+        self._gamepad = None
         self._pygame = None
         self._pygame_failed = False
         self._closed = False
@@ -179,6 +179,8 @@ class CarServer(ImageMixin):
                 pass
         self._socket.close(linger=0)
         self._context.term()
+        if self._gamepad is not None:
+            self._gamepad.close()
         if self._pygame is not None:
             panel.clear_fonts()
             self._pygame.quit()
@@ -216,17 +218,20 @@ class CarServer(ImageMixin):
 
     @property
     def controller(self):
-        """Xbox-Controller im Format des Standards (Werte 0 … 100); ohne Controller alles 0."""
+        """Controller (Xbox, Steam Controller 2 …) im Format des Standards (Werte 0 … 100);
+        ohne Controller alles 0."""
         pygame = self._get_pygame()
-        if pygame is None:
-            return neutral()
-        if self._xbox is None:
-            self._xbox = XboxController(pygame)
-        pygame.event.pump()
-        return self._xbox.read()
+        if self._gamepad is None:
+            from .controller import Gamepad
+            self._gamepad = Gamepad(pygame)
+            if not self._gamepad.available:
+                print("Kein Controller-Support: pip install pygame (oder pysdl3)")
+        if pygame is not None:
+            pygame.event.pump()
+        return self._gamepad.read()
 
     def drive_manually(self):
-        """Mit Tastatur (WASD im Kamerafenster) oder Xbox-Controller fahren.
+        """Mit Tastatur (WASD im Kamerafenster) oder Controller (Xbox, Steam Controller 2) fahren.
 
         W/S: vor/zurück mit 100, A/D: lenken 30°, loslassen = 0 (wie im Dashboard).
         Controller: rt vor, lt zurück, linker Stick lenkt, rechter Stick bewegt die Kamera.
@@ -247,7 +252,7 @@ class CarServer(ImageMixin):
             try:
                 import pygame
             except ImportError:
-                print("pygame fehlt: kein Kamerafenster, keine Tastatur und kein Controller "
+                print("pygame fehlt: kein Kamerafenster und keine Tastatur "
                       "(pip install pygame). Beenden mit Strg+C.")
                 self._pygame_failed = True
                 return None

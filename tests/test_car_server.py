@@ -307,7 +307,7 @@ class FakePygame:
 def test_xbox_controller_hotplug_and_mapping():
     from intsys_car_v1.controller import XboxController, neutral
     pygame = FakePygame()
-    xbox = XboxController(pygame)
+    xbox = XboxController(pygame, backend="pygame")
     assert xbox.read() == neutral() and not xbox.connected
     pygame.axes = [-1.0, 0.05, -1.0, 0.5, -0.5, 1.0]  # stick left, nearly centred, rt pressed
     data = xbox.read()
