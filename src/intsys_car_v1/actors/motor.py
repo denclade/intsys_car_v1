@@ -3,6 +3,7 @@ import time
 import gpiozero
 
 from ..robot_hat import PWM
+from .._validation import finite_number
 
 # Motor Left PWM P13
 # Motor Left Dir Pin: D4 - 23
@@ -31,10 +32,11 @@ class Motor:
         :param is_reversed: motor is mounted the other way round
         """
 
+        # Vor dem Beanspruchen von GPIO prüfen; der Setter gilt auch für Live-Kalibrierung.
+        self.min_speed_to_move = min_speed_to_move
         self.dir = gpiozero.OutputDevice(dir_pin, pin_factory=factory)
         self.freq = freq
         self._is_reversed = is_reversed
-        self._min_speed_to_move = min_speed_to_move
         self.pwm = PWM(pwm_pin)
         self.pwm.freq(self.freq)
         self.pwm.pulse_width_percent(0)
@@ -62,6 +64,7 @@ class Motor:
 
     @min_speed_to_move.setter
     def min_speed_to_move(self, value):
+        value = finite_number(value, "min_speed_to_move")
         if not 0 <= value < 100:
             raise ValueError(f"min_speed_to_move must be between 0 and 100, not {value}")
         self._min_speed_to_move = value
@@ -75,7 +78,7 @@ class Motor:
 
     @speed.setter
     def speed(self, value):
-        # Ensure speed to be between -100 and 100
+        value = finite_number(value, "speed")
         value = max(min(100, value), -100)
 
         self._speed = value

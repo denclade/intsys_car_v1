@@ -216,3 +216,37 @@ def test_config_sections_fit_the_constructors(factory, tmp_path):
         Servo(section, **car[section])
     HC_SR04(factory=factory, **car["ultrasonic"])
     AnalogGrayscale(**car["line_sensor"])
+
+
+@pytest.mark.parametrize('value', [float('nan'), float('inf'), -float('inf'), True, '10'])
+def test_invalid_actuator_values_do_not_reach_pwm(factory, value):
+    from intsys_car_v1 import Servo
+    motor, events = make_motor(factory)
+    servo = Servo('Lenkung', 2)
+    angles = []
+    servo.pulse_width = angles.append
+    with pytest.raises(ValueError):
+        motor.setSpeed(value)
+    with pytest.raises(ValueError):
+        servo.setAngle(value)
+    with pytest.raises(ValueError):
+        servo.pulse_width_time(value)
+    assert events == [] and angles == [] and motor.speed == 0
+
+
+@pytest.mark.parametrize('value', ['nan', 'inf', '-inf'])
+def test_nonfinite_configuration_is_rejected(tmp_path, value):
+    from intsys_car_v1 import load_car_config
+    path = tmp_path / 'car.toml'
+    path.write_text(f'[motor_left]\nmin_speed_to_move = {value}\n')
+    with pytest.raises(ValueError):
+        load_car_config(path)
+
+
+def test_invalid_motor_calibration_does_not_claim_gpio(factory):
+    from intsys_car_v1 import Motor
+    for value in (float('nan'), True, -1, 100):
+        with pytest.raises(ValueError):
+            Motor(13, 23, factory, min_speed_to_move=value)
+    motor = Motor(13, 23, factory, min_speed_to_move=25)
+    motor.close()

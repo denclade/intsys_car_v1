@@ -18,6 +18,8 @@ import os
 import tomllib
 from pathlib import Path
 
+from ._validation import finite_number
+
 DEFAULT_PATH = "/etc/intsys/car.toml"
 
 # intsys-car-v1-Standard (PiCar-X mit Robot HAT).
@@ -66,5 +68,7 @@ def load_car_config(path=None):
                 valid = isinstance(value, int) and not isinstance(value, bool)
             if not valid:
                 raise ValueError(f"{path}: {section}.{key} hat den falschen Typ ({value!r})")
+            if key in FLOAT_KEYS:
+                finite_number(value, f"{path}: {section}.{key}")
             config[section][key] = value
     return config

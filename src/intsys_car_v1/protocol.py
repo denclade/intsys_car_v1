@@ -4,8 +4,9 @@ Ohne Hardware und ohne Netzwerk: Grenzen der Steuerwerte, Auswertung einer
 Server-Antwort und Prüfung der Live-Kalibrierung. Gleiche Regeln wie SPARK-E und
 mein_car_v1 (car_api.py); genutzt von Car (Fahrzeug) und CarServer (Schülerrechner).
 """
-import math
 import numbers
+
+from ._validation import finite_number
 
 PORT = 5555
 
@@ -53,8 +54,7 @@ NO_ECHO = 999.0
 
 def actuator_value(key, value):
     """Steuerwert prüfen und auf ACTUATOR_LIMITS[key] begrenzen."""
-    if isinstance(value, bool) or not isinstance(value, numbers.Real) or not math.isfinite(value):
-        raise ValueError(f"{key}: Zahl erwartet, nicht {value!r}")
+    value = finite_number(value, key)
     low, high = ACTUATOR_LIMITS[key]
     return max(low, min(high, float(value))) + 0.0  # + 0.0: kein "-0.0" in Ausgaben
 
